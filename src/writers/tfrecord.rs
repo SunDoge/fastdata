@@ -12,7 +12,7 @@ pub struct TfRecordWriter {
 
 impl TfRecordWriter {
     pub fn create<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::options().create(true).open(path)?;
+        let file = File::options().append(true).create(true).open(path)?;
         let writer = BufWriter::new(file);
         Ok(Self { writer })
     }
@@ -31,5 +31,9 @@ impl TfRecordWriter {
         self.writer.write_all(&masked_crc_of_data_buf)?;
 
         Ok(())
+    }
+
+    pub fn flush(&mut self) -> Result<()> {
+        Ok(self.writer.flush()?)
     }
 }
