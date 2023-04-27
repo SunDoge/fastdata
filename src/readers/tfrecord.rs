@@ -47,7 +47,7 @@ impl TfRecordReader {
         }
 
         let length = u64::from_le_bytes(self.length_buf);
-        dbg!(length);
+        // dbg!(length);
 
         if length as usize > self.data_buf.len() {
             self.data_buf.resize((length * 2) as usize, 0);
