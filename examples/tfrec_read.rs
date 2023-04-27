@@ -1,5 +1,6 @@
 use fastdata::readers::tfrecord::TfRecordReader;
 
+
 fn main() {
     let mut reader = TfRecordReader::open("ints.tfrecord").expect("fail to open");
     reader.set_check_integrity(true);

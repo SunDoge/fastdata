@@ -76,6 +76,18 @@ impl TfRecordReader {
     }
 }
 
+impl From<BufReader<File>> for TfRecordReader {
+    fn from(reader: BufReader<File>) -> Self {
+        Self {
+            reader,
+            check_integrity: false,
+            length_buf: [0; U64_SIZE],
+            masked_crc_buf: [0; U32_SIZE],
+            data_buf: Vec::with_capacity(1024),
+        }
+    }
+}
+
 fn read_into(reader: &mut BufReader<File>, buf: &mut [u8]) -> Result<usize> {
     let mut offset = 0;
     let length = buf.len();

@@ -3,6 +3,10 @@ pub mod readers;
 mod utils;
 pub mod writers;
 
+pub mod tensorflow {
+    include!(concat!(env!("OUT_DIR"), "/tensorflow.rs"));
+}
+
 pub fn add(left: usize, right: usize) -> usize {
     left + right
 }
