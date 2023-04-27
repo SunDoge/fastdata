@@ -43,10 +43,11 @@ impl TfRecordReader {
         read_into(&mut self.reader, &mut self.masked_crc_buf)?;
 
         if self.check_integrity {
-            self.verify_masked_crc32(&self.length_buf)?;
+            self.verify_masked_crc32(&self.length_buf).expect("fail to pass length crc");
         }
 
         let length = u64::from_le_bytes(self.length_buf);
+        dbg!(length);
 
         if length as usize > self.data_buf.len() {
             self.data_buf.resize((length * 2) as usize, 0);
