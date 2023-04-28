@@ -14,7 +14,7 @@ fn main() {
     reader.iter().unwrap().for_each(|buf| {
         let example =
             fastdata::tensorflow::Example::decode(&mut Cursor::new(buf.unwrap())).unwrap();
-        let image_bytes = get_bytes_list(&example, "image").concat();
+        let image_bytes = get_bytes_list(&example, "image")[0];
         let label = get_int64_list(&example, "label")[0];
     });
 }
