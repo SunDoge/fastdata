@@ -19,14 +19,13 @@ fn main() {
 
     let start_time = Instant::now();
     let num_records = tfrecords
-        // .take(10)
-        .map(|path| {
+        .take(10)
+        .flat_map(|path| {
             let path = path.unwrap();
             println!("tfrecord: {}", path.display());
             let reader = TfRecordReader::open(&path).expect("fail to open");
             reader
         })
-        .flat_map(|r| r)
         .par_bridge()
         .map(|buf| {
             let example =
