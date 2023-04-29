@@ -1,7 +1,6 @@
 use std::io::Cursor;
 
 use fastdata::readers::tfrecord::TfRecordReader;
-use fastdata::tensorflow::{self as Tf, get_bytes_list, get_int64_list, BytesList, Features};
 use prost::Message;
 
 fn main() {
@@ -14,7 +13,7 @@ fn main() {
     reader.iter().unwrap().for_each(|buf| {
         let example =
             fastdata::tensorflow::Example::decode(&mut Cursor::new(buf.unwrap())).unwrap();
-        let image_bytes = get_bytes_list(&example, "image")[0];
-        let label = get_int64_list(&example, "label")[0];
+        let image_bytes = example.get_bytes_list("image")[0];
+        let label = example.get_int64_list("label")[0];
     });
 }
