@@ -26,9 +26,20 @@ impl Aug {
 
 fn main() {
     let vips_app = libvips::VipsApp::new("aug", false).unwrap();
-    vips_app.concurrency_set(1);
+    dbg!(
+        vips_app.concurency_get(),
+        vips_app.cache_get_max(),
+        vips_app.cache_get_max_files(),
+        vips_app.cache_get_max_mem(),
+    );
+
+    vips_app.concurrency_set(2);
+    // vips_app.cache_set_max(10000000);
+    // vips_app.cache_set_max_files(0);
+    // vips_app.cache_set_max_mem(1024 * 1024 * 1024 * 1024);
+    // vips_app.cache_set_max_mem(0);
     rayon::ThreadPoolBuilder::new()
-        .num_threads(16)
+        .num_threads(32)
         .build_global()
         .unwrap();
 
@@ -48,7 +59,7 @@ fn main() {
 
     let start_time = Instant::now();
     let num_records = tfrecords
-        // .take(10)
+        .take(10)
         .map(|path| {
             let path = path.unwrap();
             println!("tfrecord: {}", path.display());
@@ -65,7 +76,7 @@ fn main() {
 
             let img = VipsImage::new_from_buffer(image_bytes, "").unwrap();
             let img = aug.apply(&img).unwrap();
-            let image_buffer = img.image_write_to_memory();
+            // let image_buffer = img.image_write_to_memory();
             label
         })
         .count();

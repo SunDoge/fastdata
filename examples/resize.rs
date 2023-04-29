@@ -10,7 +10,7 @@ fn main() {
     //set number of threads in libvips's threadpool
     app.concurrency_set(2);
     // loads an image from file
-    let image = VipsImage::new_from_file("beforescale.jpg").unwrap();
+    let image = VipsImage::new_from_file("out.jpg").unwrap();
 
     // will resized the image and return a new instance.
     // libvips works most of the time with immutable objects, so it will return a new object

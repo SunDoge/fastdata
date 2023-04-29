@@ -33,7 +33,14 @@ fn main() {
     // reader.set_check_integrity(true);
 
     let vips_app = libvips::VipsApp::new("aug", false).unwrap();
+    dbg!(
+        vips_app.concurency_get(),
+        vips_app.cache_get_max(),
+        vips_app.cache_get_max_files(),
+        vips_app.cache_get_max_mem(),
+    );
     vips_app.concurrency_set(1);
+    
 
     let aug = Aug {
         resize: SmallestMaxSize {
