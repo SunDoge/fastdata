@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 bytes = "1.4.0"
 crc = "3.0.1"
+glob = "0.3.1"
 libvips = "1.5.1"
 prost = "0.11.9"
 rayon = "1.7.0"

@@ -43,7 +43,8 @@ impl TfRecordReader {
         read_into(&mut self.reader, &mut self.masked_crc_buf)?;
 
         if self.check_integrity {
-            self.verify_masked_crc32(&self.length_buf).expect("fail to pass length crc");
+            self.verify_masked_crc32(&self.length_buf)
+                .expect("fail to pass length crc");
         }
 
         let length = u64::from_le_bytes(self.length_buf);
@@ -122,5 +123,13 @@ impl<'a> Iterator for Iter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.reader.read().transpose()
+    }
+}
+
+impl Iterator for TfRecordReader {
+    type Item = Result<Vec<u8>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.read().transpose()
     }
 }

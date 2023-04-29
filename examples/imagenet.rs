@@ -18,7 +18,6 @@ struct Aug {
 impl Aug {
     pub fn apply(&self, img: &VipsImage) -> Result<VipsImage> {
         let img = convert_to_rgb(img)?;
-        // dbg!(img.get_bands());
         let img = self.resize.apply(&img)?;
         let img = self.crop.apply(&img)?;
         Ok(img)
@@ -26,14 +25,12 @@ impl Aug {
 }
 
 fn main() {
-    let mut reader = TfRecordReader::open(
-        "/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/val/imagenet-1k-val-000100.tfrecord",
-    )
-    .expect("fail to open");
-    // reader.set_check_integrity(true);
-
     let vips_app = libvips::VipsApp::new("aug", false).unwrap();
     vips_app.concurrency_set(1);
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(16)
+        .build_global()
+        .unwrap();
 
     let aug = Aug {
         resize: SmallestMaxSize {
@@ -46,10 +43,19 @@ fn main() {
         },
     };
 
+    let tfrecords =
+        glob::glob("/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/val/*.tfrecord").unwrap();
+
     let start_time = Instant::now();
-    let num_records = reader
-        .iter()
-        .unwrap()
+    let num_records = tfrecords
+        // .take(10)
+        .map(|path| {
+            let path = path.unwrap();
+            println!("tfrecord: {}", path.display());
+            let reader = TfRecordReader::open(&path).expect("fail to open");
+            reader
+        })
+        .flat_map(|r| r)
         .par_bridge()
         .map(|buf| {
             let example =
@@ -60,8 +66,7 @@ fn main() {
             let img = VipsImage::new_from_buffer(image_bytes, "").unwrap();
             let img = aug.apply(&img).unwrap();
             let image_buffer = img.image_write_to_memory();
-            assert_eq!(image_buffer.len(), 224 * 224 * 3);
-            (image_buffer, label)
+            label
         })
         .count();
 

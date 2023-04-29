@@ -80,17 +80,6 @@ pub struct SmallestMaxSize {
 impl SmallestMaxSize {
     pub fn apply(&self, img: &VipsImage) -> Result<VipsImage> {
         let scale = self.max_size as f64 / img.get_width().min(img.get_height()) as f64;
-        // dbg!(scale, img.get_width(), img.get_height());
-        // libvips::ops::resize_with_opts(
-        //     img,
-        //     scale,
-        //     &ResizeOptions {
-        //         kernel: self.kernel,
-        //         ..Default::default()
-        //     },
-        // )
-        // .map_err(Error::VipsError)
-        img.image_write_to_file("beforescale.jpg").unwrap();
         resize_scale(img, scale, scale, self.kernel)
     }
 }
