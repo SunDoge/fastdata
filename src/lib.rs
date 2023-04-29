@@ -1,9 +1,9 @@
 pub mod error;
+pub mod ops;
 pub mod readers;
+pub mod tensorflow;
 mod utils;
 pub mod writers;
-pub mod tensorflow;
-
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
