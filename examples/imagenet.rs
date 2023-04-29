@@ -33,13 +33,13 @@ fn main() {
         vips_app.cache_get_max_mem(),
     );
 
-    vips_app.concurrency_set(2);
+    vips_app.concurrency_set(1);
     // vips_app.cache_set_max(10000000);
     // vips_app.cache_set_max_files(0);
     // vips_app.cache_set_max_mem(1024 * 1024 * 1024 * 1024);
     // vips_app.cache_set_max_mem(0);
     rayon::ThreadPoolBuilder::new()
-        .num_threads(32)
+        .num_threads(16)
         .build_global()
         .unwrap();
 
@@ -60,13 +60,12 @@ fn main() {
     let start_time = Instant::now();
     let num_records = tfrecords
         .take(10)
-        .map(|path| {
+        .flat_map(|path| {
             let path = path.unwrap();
             println!("tfrecord: {}", path.display());
             let reader = TfRecordReader::open(&path).expect("fail to open");
             reader
         })
-        .flat_map(|r| r)
         .par_bridge()
         .map(|buf| {
             let example =
