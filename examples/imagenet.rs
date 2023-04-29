@@ -1,47 +1,18 @@
 use std::{io::Cursor, time::Instant};
 
-use fastdata::{
-    error::Result,
-    ops::image::vips::{convert_to_rgb, CenterCrop, SmallestMaxSize},
-    readers::tfrecord::TfRecordReader,
-};
+use fastdata::{error::Result, readers::tfrecord::TfRecordReader};
 use libvips::VipsImage;
+use opencv::prelude::*;
 use prost::Message;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 
-#[derive(Debug, Clone, Copy)]
-struct Aug {
-    pub resize: SmallestMaxSize,
-    pub crop: CenterCrop,
-}
-
-impl Aug {
-    pub fn apply(&self, img: &VipsImage) -> Result<VipsImage> {
-        let img = convert_to_rgb(img)?;
-        let img = self.resize.apply(&img)?;
-        let img = self.crop.apply(&img)?;
-        Ok(img)
-    }
-}
-
 fn main() {
-    let vips_app = libvips::VipsApp::new("aug", false).unwrap();
-    vips_app.concurrency_set(1);
+    opencv::core::set_num_threads(0).unwrap();
+
     rayon::ThreadPoolBuilder::new()
-        .num_threads(16)
+        .num_threads(32)
         .build_global()
         .unwrap();
-
-    let aug = Aug {
-        resize: SmallestMaxSize {
-            max_size: 256,
-            kernel: libvips::ops::Kernel::Linear,
-        },
-        crop: CenterCrop {
-            width: 224,
-            height: 224,
-        },
-    };
 
     let tfrecords =
         glob::glob("/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/val/*.tfrecord").unwrap();
@@ -62,10 +33,19 @@ fn main() {
                 fastdata::tensorflow::Example::decode(&mut Cursor::new(buf.unwrap())).unwrap();
             let image_bytes = example.get_bytes_list("image")[0];
             let label = example.get_int64_list("label")[0];
-
-            let img = VipsImage::new_from_buffer(image_bytes, "").unwrap();
-            let img = aug.apply(&img).unwrap();
-            let image_buffer = img.image_write_to_memory();
+            let mat_buf = Mat::from_slice(image_bytes).unwrap();
+            let img =
+                opencv::imgcodecs::imdecode(&mat_buf, opencv::imgcodecs::IMREAD_COLOR).unwrap();
+            let mut resized = Mat::default();
+            opencv::imgproc::resize(
+                &img,
+                &mut resized,
+                (256, 256).into(),
+                0.0,
+                0.0,
+                opencv::imgproc::INTER_LINEAR,
+            )
+            .unwrap();
             label
         })
         .count();
