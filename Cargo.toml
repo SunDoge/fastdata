@@ -9,12 +9,8 @@ edition = "2021"
 bytes = "1.4.0"
 crc = "3.0.1"
 glob = "0.3.1"
-itertools = "0.10.5"
-opencv = { version = "0.80.0", default-features = false, features = [
-    "imgcodecs",
-    "imgproc",
-] }
-# opencv = "0.80.0"
+image = "0.24.6"
+libvips = "1.5.1"
 prost = "0.11.9"
 rand = "0.8.5"
 rayon = "1.7.0"
