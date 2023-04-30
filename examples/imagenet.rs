@@ -1,13 +1,15 @@
 use std::{io::Cursor, time::Instant};
 
+use fastdata::ops::shuffler::Shuffle;
 use fastdata::{error::Result, readers::tfrecord::TfRecordReader};
-use libvips::VipsImage;
 use opencv::prelude::*;
 use prost::Message;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 
 fn main() {
     opencv::core::set_num_threads(0).unwrap();
+    let build_info = opencv::core::get_build_information().unwrap();
+    println!("{}", &build_info);
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(32)
@@ -19,13 +21,14 @@ fn main() {
 
     let start_time = Instant::now();
     let num_records = tfrecords
-        .take(10)
+        // .take(10)
         .flat_map(|path| {
             let path = path.unwrap();
             println!("tfrecord: {}", path.display());
             let reader = TfRecordReader::open(&path).expect("fail to open");
             reader
         })
+        .shuffle(10000)
         .par_bridge()
         .map(|buf| {
             let example =
@@ -35,9 +38,13 @@ fn main() {
             let mat_buf = Mat::from_slice(image_bytes).unwrap();
             let img =
                 opencv::imgcodecs::imdecode(&mat_buf, opencv::imgcodecs::IMREAD_COLOR).unwrap();
+            let mut rgb_img = Mat::default();
+
+            opencv::imgproc::cvt_color(&img, &mut rgb_img, opencv::imgproc::COLOR_BGR2RGB, 0)
+                .unwrap();
             let mut resized = Mat::default();
             opencv::imgproc::resize(
-                &img,
+                &rgb_img,
                 &mut resized,
                 (256, 256).into(),
                 0.0,

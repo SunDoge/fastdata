@@ -14,8 +14,8 @@ pub enum Error {
     #[error("{0}")]
     DataLoss(String),
 
-    #[error("libvips")]
-    VipsError(libvips::error::Error),
+    // #[error("libvips")]
+    // VipsError(libvips::error::Error),
 }
 
 impl From<std::io::Error> for Error {
