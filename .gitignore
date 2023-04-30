@@ -2,3 +2,6 @@
 /Cargo.lock
 *.jpg
 lib/
+opencv-4.x/
+perf.data*
+opencv.zip
