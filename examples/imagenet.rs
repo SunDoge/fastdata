@@ -5,6 +5,7 @@ use fastdata::ops::shuffler::Shuffle;
 use fastdata::{error::Result, readers::tfrecord::TfRecordReader};
 use image::{ImageFormat, RgbImage};
 use prost::Message;
+use rayon::prelude::*;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 
 fn read_image_from_buffer(buf: &[u8]) {
@@ -32,46 +33,75 @@ fn read_image_from_buffer(buf: &[u8]) {
 
 fn main() {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(64)
+        .num_threads(16)
         .build_global()
         .unwrap();
 
-    let (sender, receiver) = bounded(1024 * 1024 * 10);
+    // let (sender, receiver) = bounded(1024 * 1024 * 10);
+    // let pattern = "/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/val/*.tfrecord";
+    let pattern = "/mnt/ssd/chenyf/val/*.tfrecord";
+    let tfrecords: Vec<_> = glob::glob(pattern).unwrap().collect();
 
-    let tfrecords =
-        glob::glob("/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/val/*.tfrecord").unwrap();
-
-    rayon::spawn(move || {
-        tfrecords
-            // .take(10)
-            .flat_map(|path| {
-                let path = path.unwrap();
-                println!("tfrecord: {}", path.display());
-                let reader = TfRecordReader::open(&path).expect("fail to open");
-                reader
-            })
-            .for_each(|buf| {
-                sender.send(buf.unwrap()).unwrap();
-            })
-    });
+    // rayon::spawn(move || {
+    //     tfrecords
+    //         // .take(10)
+    //         .collect::<Vec<_>>()
+    //         .()
+    //         .flat_map(|path| {
+    //             let path = path.unwrap();
+    //             println!("tfrecord: {}", path.display());
+    //             let reader = TfRecordReader::open(&path).expect("fail to open");
+    //             reader
+    //         })
+    //         .for_each(|buf| {
+    //             sender.send(buf.unwrap()).unwrap();
+    //         })
+    // });
 
     let start_time = Instant::now();
-    let num_records = receiver
-        .iter()
-        .par_bridge()
-        .map(|buf| {
-            let example = fastdata::tensorflow::Example::decode(&mut Cursor::new(buf)).unwrap();
-            let image_bytes = example.get_bytes_list("image")[0];
-            let label = example.get_int64_list("label")[0];
+    // let num_records = receiver
+    let num_records: usize = tfrecords
+        .par_iter()
+        .flat_map(|path| {
+            let path = path.as_ref().unwrap();
+            println!("tfrecord: {}", path.display());
+            let reader = TfRecordReader::open(&path).expect("fail to open");
+            reader
+                .par_bridge()
+                .map(|buf| {
+                    let example =
+                        fastdata::tensorflow::Example::decode(&mut Cursor::new(buf.unwrap()))
+                            .unwrap();
+                    // let image_bytes = example.get_bytes_list("image")[0];
+                    // let label = example.get_int64_list("label")[0];
 
-            read_image_from_buffer(image_bytes);
-
-            // let img = aug.apply(&img).unwrap();
-            // let image_buffer = img.image_write_to_memory();
-            label
+                    // let img = aug.apply(&img).unwrap();
+                    // let image_buffer = img.image_write_to_memory();
+                    // label
+                    example
+                })
+                .map(|example| {
+                    let image_bytes = example.get_bytes_list("image")[0];
+                    let label = example.get_int64_list("label")[0];
+                    let img = read_image_from_buffer(image_bytes);
+                })
         })
         .count();
+    // .iter()
+    // .par_bridge()
+    // .map(|buf| {
+    //     let example = fastdata::tensorflow::Example::decode(&mut Cursor::new(buf)).unwrap();
+    //     let image_bytes = example.get_bytes_list("image")[0];
+    //     let label = example.get_int64_list("label")[0];
+
+    //     // read_image_from_buffer(image_bytes);
+
+    //     // let img = aug.apply(&img).unwrap();
+    //     // let image_buffer = img.image_write_to_memory();
+    //     label
+    // })
+    // .count();
 
     let rate = num_records as f64 / start_time.elapsed().as_secs_f64();
-    println!("rate: {rate} record/s");
+    println!("rate: {rate} record/s records {num_records}");
 }
