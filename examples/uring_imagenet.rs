@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, io::Read, os::fd::AsRawFd, path::PathBuf, time::Instant};
 
 use io_uring::{opcode, types, IoUring};
+use rayon::prelude::*;
 use slab::Slab;
 
 const QUEUE_DEPTH: usize = 32;
@@ -12,18 +13,18 @@ fn main() {
         glob::glob("/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/train/*.tfrecord").unwrap();
     let filenames: Vec<_> = tfrecords.map(|p| p.unwrap()).collect();
 
-    // let start_time = Instant::now();
-    // let num_blocks = seq_read(&filenames);
-    // dbg!(start_time.elapsed(), num_blocks);
-
     let start_time = Instant::now();
-    let num_blocks = iouring_read(&filenames);
+    let num_blocks = seq_read(&filenames);
     dbg!(start_time.elapsed(), num_blocks);
+
+    // let start_time = Instant::now();
+    // let num_blocks = iouring_read(&filenames);
+    // dbg!(start_time.elapsed(), num_blocks);
 }
 
 fn seq_read(filenames: &[PathBuf]) -> usize {
     filenames
-        .iter()
+        .par_iter()
         .map(|p| {
             let file = std::fs::File::open(p).unwrap();
             let mut reader = std::io::BufReader::new(file);
