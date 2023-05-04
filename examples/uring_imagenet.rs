@@ -3,13 +3,13 @@ use std::{collections::VecDeque, io::Read, os::fd::AsRawFd, path::PathBuf, time:
 use io_uring::{opcode, types, IoUring};
 use slab::Slab;
 
-const QUEUE_DEPTH: usize = 16;
+const QUEUE_DEPTH: usize = 32;
 const BUFFER_SIZE: usize = 16 * 1024;
 
 fn main() {
     // let tfrecords = glob::glob("/home/denghuang/datasets/imagenet-tfrec/val/*.tfrecord").unwrap();
     let tfrecords =
-        glob::glob("/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/val/*.tfrecord").unwrap();
+        glob::glob("/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/train/*.tfrecord").unwrap();
     let filenames: Vec<_> = tfrecords.map(|p| p.unwrap()).collect();
 
     // let start_time = Instant::now();
