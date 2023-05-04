@@ -8,13 +8,17 @@ edition = "2021"
 [dependencies]
 bytes = "1.4.0"
 crc = "3.0.1"
+crossbeam-channel = "0.5.8"
 glob = "0.3.1"
 image = "0.24.6"
-libvips = "1.5.1"
+io-uring = "0.6.0"
 prost = "0.11.9"
 rand = "0.8.5"
 rayon = "1.7.0"
 thiserror = "1.0.40"
+tokio-uring = "0.4.0"
+zune-jpeg = "0.3.17"
+zune-png = "0.2.1"
 
 [build-dependencies]
 prost-build = "0.11.9"

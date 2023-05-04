@@ -1,3 +1,5 @@
+
+
 include!(concat!(env!("OUT_DIR"), "/tensorflow.rs"));
 
 impl Example {
@@ -24,6 +26,30 @@ impl Example {
         match feat.kind {
             Some(feature::Kind::Int64List(ref list)) => list.value.as_slice(),
             _ => unreachable!(),
+        }
+    }
+}
+
+impl From<Vec<f32>> for Feature {
+    fn from(value: Vec<f32>) -> Self {
+        Self {
+            kind: Some(feature::Kind::FloatList(FloatList { value })),
+        }
+    }
+}
+
+impl From<Vec<i64>> for Feature {
+    fn from(value: Vec<i64>) -> Self {
+        Self {
+            kind: Some(feature::Kind::Int64List(Int64List { value })),
+        }
+    }
+}
+
+impl From<Vec<Vec<u8>>> for Feature {
+    fn from(value: Vec<Vec<u8>>) -> Self {
+        Self {
+            kind: Some(feature::Kind::BytesList(BytesList { value })),
         }
     }
 }

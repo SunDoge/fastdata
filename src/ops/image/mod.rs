@@ -1,2 +1,2 @@
 // pub mod vips;
-pub mod opencv;
+// pub mod opencv;

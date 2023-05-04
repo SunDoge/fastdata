@@ -1,7 +1,6 @@
 use std::{io::Cursor, time::Instant};
 
 use fastdata::{error::Result, readers::tfrecord::TfRecordReader};
-use opencv::prelude::*;
 use prost::Message;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 
@@ -11,8 +10,6 @@ fn main() {
     )
     .expect("fail to open");
     // reader.set_check_integrity(true);
-
-    opencv::core::set_num_threads(0).unwrap();
 
     let start_time = Instant::now();
     let num_records = reader
@@ -24,9 +21,9 @@ fn main() {
                 fastdata::tensorflow::Example::decode(&mut Cursor::new(buf.unwrap())).unwrap();
             let image_bytes = example.get_bytes_list("image")[0];
             let label = example.get_int64_list("label")[0];
-            let mat_buf = Mat::from_slice(image_bytes).unwrap();
-            let img =
-                opencv::imgcodecs::imdecode(&mat_buf, opencv::imgcodecs::IMREAD_COLOR).unwrap();
+            // let mat_buf = Mat::from_slice(image_bytes).unwrap();
+            // let img =
+            //     opencv::imgcodecs::imdecode(&mat_buf, opencv::imgcodecs::IMREAD_COLOR).unwrap();
 
             // assert_eq!(image_buffer.len(), 224 * 224 * 3);
             // (image_buffer, label)
