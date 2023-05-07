@@ -13,6 +13,7 @@ glob = "0.3.1"
 image = "0.24.6"
 io-uring = "0.6.0"
 prost = "0.11.9"
+pyo3 = { version = "0.18.3", features = ["extension-module"] }
 rand = "0.8.5"
 rayon = "1.7.0"
 slab = "0.4.8"
@@ -20,6 +21,13 @@ thiserror = "1.0.40"
 tokio-uring = "0.4.0"
 zune-jpeg = "0.3.17"
 zune-png = "0.2.1"
+dlpark = {git = "https://github.com/SunDoge/dlpark.git"}
 
 [build-dependencies]
 prost-build = "0.11.9"
+
+
+[workspace]
+members = [
+    "examples/withpy"
+]
