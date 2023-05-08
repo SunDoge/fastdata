@@ -11,4 +11,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.18.3", features = ["extension-module"] }
-dlpark = {git = "https://github.com/SunDoge/dlpark.git"}
+dlpark = { git = "https://github.com/SunDoge/dlpark.git" }
+fastdata = { path = "../../" }
