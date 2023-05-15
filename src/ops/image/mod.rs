@@ -1,2 +1,5 @@
 // pub mod vips;
-// pub mod opencv;
+
+#[cfg(feature = "opencv")]
+pub mod opencv;
+// pub mod augs;
