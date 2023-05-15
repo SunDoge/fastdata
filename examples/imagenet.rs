@@ -29,7 +29,7 @@ impl Aug {
 
 fn main() {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(32)
+        .num_threads(64)
         .build_global()
         .unwrap();
 
@@ -61,7 +61,7 @@ fn main() {
     // });
 
     let start_time = Instant::now();
-    // let num_records = receiver
+
     let num_records: usize = tfrecords
         .par_iter()
         .flat_map(|path| {
