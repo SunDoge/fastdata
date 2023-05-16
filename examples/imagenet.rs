@@ -29,7 +29,7 @@ impl Aug {
 
 fn main() {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(64)
+        .num_threads(32)
         .build_global()
         .unwrap();
 
