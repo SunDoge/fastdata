@@ -9,7 +9,7 @@ fn main() {
         "/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/val/imagenet-1k-val-000100.tfrecord",
     )
     .expect("fail to open");
-    // reader.set_check_integrity(true);
+    reader.set_check_integrity(true);
 
     let start_time = Instant::now();
     let num_records = reader

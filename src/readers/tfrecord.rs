@@ -4,10 +4,7 @@ use std::{
     path::Path,
 };
 
-use crate::{
-    error::{Error, Result},
-    utils::crc32c::verify_masked_crc,
-};
+use crate::{error::Result, utils::crc32c::verify_masked_crc};
 
 const U64_SIZE: usize = std::mem::size_of::<u64>();
 const U32_SIZE: usize = std::mem::size_of::<u32>();
@@ -35,12 +32,17 @@ impl TfRecordReader {
     }
 
     pub fn read(&mut self) -> Result<Option<Vec<u8>>> {
-        let bytes_read = read_into(&mut self.reader, &mut self.length_buf)?;
-
-        if bytes_read == 0 {
-            return Ok(None);
+        match self.reader.read_exact(&mut self.length_buf) {
+            Ok(_) => {}
+            Err(err) => {
+                return match err.kind() {
+                    std::io::ErrorKind::UnexpectedEof => Ok(None),
+                    _ => Err(err.into()),
+                }
+            }
         }
-        read_into(&mut self.reader, &mut self.masked_crc_buf)?;
+
+        self.reader.read_exact(&mut self.masked_crc_buf)?;
 
         if self.check_integrity {
             self.verify_masked_crc32(&self.length_buf)
@@ -53,8 +55,11 @@ impl TfRecordReader {
         if length as usize > self.data_buf.len() {
             self.data_buf.resize((length * 2) as usize, 0);
         }
-        read_into(&mut self.reader, &mut self.data_buf[..length as usize])?;
-        read_into(&mut self.reader, &mut self.masked_crc_buf)?;
+
+        self.reader
+            .read_exact(&mut self.data_buf[..length as usize])?;
+
+        self.reader.read_exact(&mut self.masked_crc_buf)?;
 
         if self.check_integrity {
             self.verify_masked_crc32(&self.data_buf[..length as usize])?;
@@ -86,30 +91,6 @@ impl From<BufReader<File>> for TfRecordReader {
             length_buf: [0; U64_SIZE],
             masked_crc_buf: [0; U32_SIZE],
             data_buf: Vec::with_capacity(1024),
-        }
-    }
-}
-
-fn read_into(reader: &mut BufReader<File>, buf: &mut [u8]) -> Result<usize> {
-    let mut offset = 0;
-    let length = buf.len();
-
-    loop {
-        match reader.read(&mut buf[offset..]) {
-            Ok(0) => {
-                if offset == 0 || offset == length {
-                    return Ok(offset);
-                } else {
-                    return Err(Error::DataLoss("not enough bytes".to_string()));
-                }
-            }
-            Ok(n) => {
-                offset += n;
-                if offset == length {
-                    return Ok(offset);
-                }
-            }
-            Err(err) => return Err(err.into()),
         }
     }
 }

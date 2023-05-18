@@ -50,31 +50,39 @@ pub fn one_tfrecord(py: Python<'_>, pattern: &str, num_workers: usize) -> DataSo
     let (sender, receiver) = bounded(10240);
 
     rayon::spawn(move || {
-        tfrecords
-            .par_iter()
-            .flat_map(|path| {
-                let path = path.as_ref().unwrap();
-                // println!("tfrecord: {}", path.display());
-                let reader = TfRecordReader::open(&path).expect("fail to open");
-                reader.par_bridge().map(|buf| {
-                    let example =
-                        fastdata::tensorflow::Example::decode(&mut Cursor::new(buf.unwrap()))
-                            .unwrap();
-                    example
-                })
-            })
-            .for_each_with((Aug::default(), sender), |(aug, sender), example| {
-                let image_bytes = example.get_bytes_list("image")[0];
-                let label = example.get_int64_list("label")[0];
+        tfrecords.par_iter().for_each(|path| {
+            let path = path.as_ref().unwrap();
+            // println!("tfrecord: {}", path.display());
+            // let reader = TfRecordReader::open(&path).expect("fail to open");
+            // reader
+            (0..256)
+                .par_bridge()
+                .for_each_with(Aug::default(), |aug, buf| {
+                    // let example =
+                    //     fastdata::tensorflow::Example::decode(&mut Cursor::new(buf.unwrap()))
+                    //         .unwrap();
 
-                let img_buf = Mat::from_slice(image_bytes).unwrap();
-                let img =
-                    opencv::imgcodecs::imdecode(&img_buf, opencv::imgcodecs::IMREAD_COLOR).unwrap();
+                    // let image_bytes = example.get_bytes_list("image")[0];
+                    // let label = example.get_int64_list("label")[0];
 
-                let img = aug.apply(&img);
+                    // let img_buf = Mat::from_slice(image_bytes).unwrap();
+                    // let img =
+                    //     opencv::imgcodecs::imdecode(&img_buf, opencv::imgcodecs::IMREAD_COLOR)
+                    //         .unwrap();
+                    let img = Mat::zeros(720, 840, opencv::core::CV_8U)
+                        .unwrap()
+                        .to_mat()
+                        .unwrap();
 
-                sender.send((ManagerCtx::from(PyMat(img)), label)).unwrap();
-            });
+                    let img = aug.apply(&img);
+                    let label = buf;
+
+                    sender.send((ManagerCtx::from(PyMat(img)), label)).unwrap();
+                });
+        });
+        // .for_each_with((Aug::default(), sender), |(aug, sender), buf| {
+
+        // });
     });
 
     receiver
@@ -82,6 +90,7 @@ pub fn one_tfrecord(py: Python<'_>, pattern: &str, num_workers: usize) -> DataSo
             Python::with_gil(|py| {
                 let dic = PyDict::new(py);
                 dic.set_item("image", img.into_py(py)).unwrap();
+                // dic.set_item("image", ManagerCtx::from(PyMat(img)).into_py(py)).unwrap();
                 dic.set_item("label", label).unwrap();
                 dic.into_py(py)
             })
@@ -92,7 +101,17 @@ pub fn one_tfrecord(py: Python<'_>, pattern: &str, num_workers: usize) -> DataSo
 #[pyfunction]
 fn pure_data(n: usize) -> DataSource {
     (0..n)
-        .map(|x| Python::with_gil(|py| ManagerCtx::from(vec![1.0f32; 3 * 224 * 224]).into_py(py)))
+        .map(|x| {
+            Python::with_gil(|py| {
+                let dic = PyDict::new(py);
+                dic.set_item(
+                    "image",
+                    ManagerCtx::from(vec![1.0f32; 3 * 224 * 224]).into_py(py),
+                )
+                .unwrap();
+                dic.into_py(py)
+            })
+        })
         .data_source()
 }
 
