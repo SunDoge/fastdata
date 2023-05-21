@@ -1,34 +1,40 @@
-use std::{
-    fs::File,
-    io::{BufReader, Read, Seek},
-    path::Path,
-};
+use std::{fs::File, io::Read};
 
 use crate::{error::Result, utils::crc32c::verify_masked_crc};
 
 const U64_SIZE: usize = std::mem::size_of::<u64>();
 const U32_SIZE: usize = std::mem::size_of::<u32>();
 
-pub struct TfRecordReader {
-    reader: BufReader<File>,
+pub struct TfrecordReader<T> {
+    reader: T,
     check_integrity: bool,
     length_buf: [u8; U64_SIZE],
     masked_crc_buf: [u8; U32_SIZE],
     data_buf: Vec<u8>,
 }
 
-impl TfRecordReader {
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
+impl<T: Read> TfrecordReader<T> {
+    // pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+    //     let file = File::open(path)?;
+    //     let reader = BufReader::new(file);
 
-        Ok(Self {
+    //     Ok(Self {
+    //         reader,
+    //         check_integrity: false,
+    //         length_buf: [0; U64_SIZE],
+    //         masked_crc_buf: [0; U32_SIZE],
+    //         data_buf: Vec::with_capacity(1024),
+    //     })
+    // }
+
+    pub fn new(reader: T, check_integrity: bool) -> Self {
+        Self {
             reader,
-            check_integrity: false,
+            check_integrity,
             length_buf: [0; U64_SIZE],
             masked_crc_buf: [0; U32_SIZE],
             data_buf: Vec::with_capacity(1024),
-        })
+        }
     }
 
     pub fn read(&mut self) -> Result<Option<Vec<u8>>> {
@@ -76,38 +82,15 @@ impl TfRecordReader {
     pub fn set_check_integrity(&mut self, check_integrity: bool) {
         self.check_integrity = check_integrity;
     }
+}
 
-    pub fn iter(&mut self) -> Result<Iter<'_>> {
-        self.reader.seek(std::io::SeekFrom::Start(0))?;
-        Ok(Iter { reader: self })
+impl<T: Read> From<T> for TfrecordReader<T> {
+    fn from(reader: T) -> Self {
+        Self::new(reader, false)
     }
 }
 
-impl From<BufReader<File>> for TfRecordReader {
-    fn from(reader: BufReader<File>) -> Self {
-        Self {
-            reader,
-            check_integrity: false,
-            length_buf: [0; U64_SIZE],
-            masked_crc_buf: [0; U32_SIZE],
-            data_buf: Vec::with_capacity(1024),
-        }
-    }
-}
-
-pub struct Iter<'a> {
-    reader: &'a mut TfRecordReader,
-}
-
-impl<'a> Iterator for Iter<'a> {
-    type Item = Result<Vec<u8>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.reader.read().transpose()
-    }
-}
-
-impl Iterator for TfRecordReader {
+impl<T: Read> Iterator for TfrecordReader<T> {
     type Item = Result<Vec<u8>>;
 
     fn next(&mut self) -> Option<Self::Item> {

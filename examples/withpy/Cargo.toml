@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.18.3", features = ["extension-module"] }
 dlpark = { git = "https://github.com/SunDoge/dlpark.git" }
-fastdata = { path = "../../" }
+fastdata = { path = "../../", features = ["opencv"]}
 rayon = "1.7.0"
 opencv = { version = "0.81.3", default-features = false, features = [
     "imgcodecs",

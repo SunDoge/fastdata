@@ -5,7 +5,7 @@ use kanal::bounded;
 
 use fastdata::ops::image::opencv::{BgrToRgb, CenterCrop, SmallestMaxSize};
 use fastdata::ops::shuffler::Shuffle;
-use fastdata::{error::Result, readers::tfrecord::TfRecordReader};
+use fastdata::{error::Result, readers::tfrecord::TfrecordReader};
 
 use opencv::prelude::*;
 use prost::Message;
@@ -67,7 +67,7 @@ fn main() {
             // let mut aug = Aug::default();
             r1.for_each(|path| {
                 println!("idx: {} tfrecord: {}", read_idx, path.display());
-                let reader = TfRecordReader::open(path).unwrap();
+                let reader = TfrecordReader::open(path).unwrap();
                 reader.for_each(|buf| {
                     // let example =
                     //     fastdata::tensorflow::Example::decode(&mut Cursor::new(buf.unwrap()))

@@ -4,7 +4,7 @@ use crossbeam_channel::bounded;
 
 use fastdata::ops::image::opencv::{BgrToRgb, CenterCrop, SmallestMaxSize};
 use fastdata::ops::shuffler::Shuffle;
-use fastdata::{error::Result, readers::tfrecord::TfRecordReader};
+use fastdata::{error::Result, readers::tfrecord::TfrecordReader};
 
 use opencv::prelude::*;
 use prost::Message;
@@ -67,7 +67,7 @@ fn main() {
         .flat_map(|path| {
             let path = path.as_ref().unwrap();
             println!("tfrecord: {}", path.display());
-            let reader = TfRecordReader::open(&path).expect("fail to open");
+            let reader = TfrecordReader::open(&path).expect("fail to open");
             reader.par_bridge().map(|buf| {
                 let example =
                     fastdata::tensorflow::Example::decode(&mut Cursor::new(buf.unwrap())).unwrap();

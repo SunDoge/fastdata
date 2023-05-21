@@ -1,11 +1,11 @@
 use std::{io::Cursor, time::Instant};
 
-use fastdata::{error::Result, readers::tfrecord::TfRecordReader};
+use fastdata::{error::Result, readers::tfrecord::TfrecordReader};
 use prost::Message;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 
 fn main() {
-    let mut reader = TfRecordReader::open(
+    let mut reader = TfrecordReader::open(
         "/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/val/imagenet-1k-val-000100.tfrecord",
     )
     .expect("fail to open");

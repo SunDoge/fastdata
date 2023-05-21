@@ -1,6 +1,6 @@
 use dlpark::prelude::*;
 use fastdata::ops::image::opencv::{BgrToRgb, CenterCrop, PyMat, SmallestMaxSize};
-use fastdata::readers::tfrecord::TfRecordReader;
+use fastdata::readers::tfrecord::TfrecordReader;
 use fastdata::utils::data_source::{DataSource, IntoDataSource};
 use opencv::prelude::*;
 use prost::Message;
