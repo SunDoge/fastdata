@@ -6,15 +6,13 @@ use std::{
 
 use crate::{error::Result, utils::crc32c::get_masked_crc};
 
-pub struct TfRecordWriter {
-    writer: BufWriter<File>,
+pub struct TfrecordWriter<T> {
+    writer: T,
 }
 
-impl TfRecordWriter {
-    pub fn create<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::options().append(true).create(true).open(path)?;
-        let writer = BufWriter::new(file);
-        Ok(Self { writer })
+impl<T: Write> TfrecordWriter<T> {
+    pub fn new(writer: T) -> Self {
+        Self { writer }
     }
 
     pub fn write(&mut self, buf: &[u8]) -> Result<()> {
@@ -35,5 +33,19 @@ impl TfRecordWriter {
 
     pub fn flush(&mut self) -> Result<()> {
         Ok(self.writer.flush()?)
+    }
+}
+
+impl<T: Write> From<T> for TfrecordWriter<T> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
+impl TfrecordWriter<BufWriter<File>> {
+    pub fn create<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let file = File::options().append(true).create(true).open(path)?;
+        let writer = BufWriter::new(file);
+        Ok(Self::new(writer))
     }
 }
