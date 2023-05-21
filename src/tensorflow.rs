@@ -1,10 +1,12 @@
 include!(concat!(env!("OUT_DIR"), "/tensorflow.rs"));
 
 impl Example {
-    pub fn get_bytes_list(&self, key: &str) -> Option<&[Vec<u8>]> {
+    pub fn get_bytes_list(&self, key: &str) -> Option<Vec<&[u8]>> {
         let feat = self.features.as_ref()?.feature.get(key)?;
         match feat.kind {
-            Some(feature::Kind::BytesList(ref list)) => Some(list.value.as_slice()),
+            Some(feature::Kind::BytesList(ref list)) => {
+                Some(list.value.iter().map(|x| x.as_slice()).collect())
+            }
             _ => None,
         }
     }
