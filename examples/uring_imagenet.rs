@@ -1,6 +1,8 @@
 use std::{collections::VecDeque, io::Read, os::fd::AsRawFd, path::PathBuf, time::Instant};
 
+use fastdata::readers::io_uring_tfrecord::io_uring_loop;
 use io_uring::{opcode, types, IoUring};
+use kanal::bounded;
 use rayon::prelude::*;
 use slab::Slab;
 
@@ -17,8 +19,23 @@ fn main() {
     // let num_blocks = seq_read(&filenames);
     // dbg!(start_time.elapsed(), num_blocks);
 
+    // let start_time = Instant::now();
+    // let num_blocks = iouring_read(&filenames);
+    // dbg!(start_time.elapsed(), num_blocks);
+
+    let (sender, receiver) = bounded(1024 * 1024);
+    std::thread::spawn(move || {
+        io_uring_loop(
+            &mut filenames
+                .iter()
+                .map(|filename| std::fs::File::open(filename).unwrap()),
+            64,
+            sender,
+            true,
+        );
+    });
     let start_time = Instant::now();
-    let num_blocks = iouring_read(&filenames);
+    let num_blocks = receiver.count();
     dbg!(start_time.elapsed(), num_blocks);
 }
 
@@ -98,10 +115,12 @@ fn iouring_read(filenames: &[PathBuf]) -> usize {
     println!("read queue size: {}", read_queue.len());
 
     ring.submit_and_wait(1).unwrap();
+    ring.submit().unwrap();
 
     println!("start loop");
     while num_reads > 0 && !buffers.is_empty() {
         for cqe in ring.completion() {
+            // println!("has completion");
             assert!(cqe.result() >= 0);
             let buf_idx = cqe.user_data() as usize;
             let bytes_read = cqe.result();

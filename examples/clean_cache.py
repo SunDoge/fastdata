@@ -2,8 +2,8 @@ import os
 import glob
 
 
-# pattern = "/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/val/*.tfrecord"
-pattern = "/mnt/ssd/chenyf/val/*.tfrecord"
+pattern = "/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/train/*.tfrecord"
+# pattern = "/mnt/ssd/chenyf/val/*.tfrecord"
 
 for filename in glob.glob(pattern):
     print(filename)

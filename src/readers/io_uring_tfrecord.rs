@@ -1,6 +1,7 @@
 use std::{mem::ManuallyDrop, os::fd::AsRawFd};
 
 use crate::error::{Error, Result};
+use crate::utils::crc32c::verify_masked_crc;
 use io_uring::{opcode, types, IoUring};
 use kanal::Sender;
 use slab::Slab;
@@ -8,7 +9,7 @@ use slab::Slab;
 const U64_SIZE: usize = std::mem::size_of::<u64>();
 const U32_SIZE: usize = std::mem::size_of::<u32>();
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct IoVec {
     pub iov_base: *mut std::ffi::c_void,
@@ -164,8 +165,12 @@ where
     }
 }
 
-pub fn io_uring_loop<T>(source: &mut T, queue_depth: u32, sender: Sender<Vec<u8>>)
-where
+pub fn io_uring_loop<T>(
+    source: &mut T,
+    queue_depth: u32,
+    sender: Sender<Vec<u8>>,
+    check_integrity: bool,
+) where
     T: Iterator<Item = std::fs::File>,
 {
     let mut ring = IoUring::new(queue_depth).unwrap();
@@ -216,12 +221,33 @@ where
             if bytes_read == 0 {
                 let buffer = buffers.remove(buf_idx);
                 println!("finished: {:?}", buffer);
-                num_reads -= 1;
+
+                if let Some(fd) = source.next() {
+                    let buffer = Buffer {
+                        fd,
+                        io_vecs: vec![
+                            IoVec::from(vec![0; U64_SIZE]),
+                            IoVec::from(vec![0; U32_SIZE]),
+                        ],
+                        offset: 0,
+                    };
+                    let buf_idx = buffers.insert(buffer);
+                    let buf_ref = &mut buffers[buf_idx];
+                    let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
+                    waiting.push(read_e);
+                }
             } else {
+                // dbg!(bytes_read);
                 let buf_ref = &mut buffers[buf_idx];
                 if buf_ref.is_read_header() {
                     let length_buf = buf_ref.io_vecs[0].as_slice().try_into().unwrap();
                     let length = u64::from_le_bytes(length_buf);
+
+                    if check_integrity {
+                        let masked_crc_buf = buf_ref.io_vecs[1].as_slice().try_into().unwrap();
+                        let masked_crc = u32::from_le_bytes(masked_crc_buf);
+                        assert!(verify_masked_crc(&length_buf, masked_crc).is_ok());
+                    }
 
                     buf_ref.io_vecs = vec![
                         IoVec::from(vec![0; length as usize]),
@@ -233,8 +259,52 @@ where
 
                     let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
                     waiting.push(read_e);
+                } else {
+                    let data_buf = Vec::from(buf_ref.io_vecs[0]);
+                    if check_integrity {
+                        let masked_crc_buf = buf_ref.io_vecs[1].as_slice().try_into().unwrap();
+                        let masked_crc = u32::from_le_bytes(masked_crc_buf);
+                        assert!(verify_masked_crc(&data_buf, masked_crc).is_ok());
+                    }
+
+                    let data_length = data_buf.len();
+                    sender.send(data_buf).unwrap();
+
+                    let length_buf = buf_ref.io_vecs[2].as_slice().try_into().unwrap();
+                    let length = u64::from_le_bytes(length_buf);
+
+                    if check_integrity {
+                        let masked_crc_buf = buf_ref.io_vecs[3].as_slice().try_into().unwrap();
+                        let masked_crc = u32::from_le_bytes(masked_crc_buf);
+                        assert!(verify_masked_crc(&length_buf, masked_crc).is_ok());
+                    }
+
+                    buf_ref.io_vecs[0] = IoVec::from(vec![0; length as usize]);
+                    buf_ref.offset += (data_length + U32_SIZE + U64_SIZE + U32_SIZE) as u64;
+
+                    let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
+                    waiting.push(read_e);
                 }
             }
+            num_reads -= 1;
         }
+
+        // dbg!(num_reads);
+        let n = waiting.len().min(max_reads - num_reads);
+        for read_e in waiting.drain(0..n) {
+            unsafe {
+                ring.submission().push(&read_e).unwrap();
+            }
+            num_reads += 1;
+        }
+
+        // dbg!(num_reads == max_reads);
+
+        if num_reads == 0 {
+            break;
+        }
+
+        ring.submit_and_wait(1).unwrap();
+        // ring.submit().unwrap();
     }
 }
