@@ -1,12 +1,31 @@
-use std::io::Cursor;
-
-use crossbeam_channel::bounded;
-use dlpark::tensor::TensorWrapper;
-use fastdata::{python::MyIterator, readers::tfrecord::TfRecordReader, tensorflow::Example};
+use dlpark::prelude::*;
+use fastdata::ops::image::opencv::{BgrToRgb, CenterCrop, PyMat, SmallestMaxSize};
+use fastdata::readers::tfrecord::TfrecordReader;
+use fastdata::utils::data_source::{DataSource, IntoDataSource};
+use opencv::prelude::*;
 use prost::Message;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use rayon::{prelude::*, ThreadPoolBuilder};
+use rayon::prelude::*;
+use std::{io::Cursor, time::Instant};
+
+use kanal::{bounded, unbounded};
+
+#[derive(Debug, Clone, Default)]
+struct Aug {
+    convert_color: BgrToRgb,
+    resize: SmallestMaxSize,
+    crop: CenterCrop,
+}
+
+impl Aug {
+    pub fn apply(&mut self, img: &Mat) -> Mat {
+        let img = self.convert_color.apply(img);
+        let img = self.resize.apply(&img);
+        let img = self.crop.apply(&img);
+        img
+    }
+}
 
 #[pyfunction]
 pub fn add(left: usize, right: usize) -> usize {
@@ -14,64 +33,93 @@ pub fn add(left: usize, right: usize) -> usize {
 }
 
 #[pyfunction]
-pub fn make_record_dataset(root: &str, num_threads: usize) -> MyIterator {
-    // let it = (0..10).map(|x| Python::with_gil(|py| x.to_object(py)));
+pub fn one_tfrecord(py: Python<'_>, pattern: &str, num_workers: usize) -> DataSource {
+    // let pattern = "/mnt/ssd/chenyf/val/*.tfrecord";
+    let tfrecords: Vec<_> = glob::glob(pattern).unwrap().collect();
+    opencv::core::set_num_threads(0).unwrap();
+    println!(
+        "use optimization {}",
+        opencv::core::use_optimized().unwrap()
+    );
 
-    let thread_pool = ThreadPoolBuilder::new()
-        .num_threads(num_threads)
-        .build()
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(num_workers)
+        .build_global()
         .unwrap();
 
-    let (sender, receiver) = bounded(32);
+    let (sender, receiver) = bounded(10240);
 
-    let root_string = root.to_string();
-    let _iter = thread_pool.spawn(move || {
-        let record = TfRecordReader::open(&root_string).unwrap();
-        println!("start loop");
+    rayon::spawn(move || {
+        tfrecords.par_iter().for_each(|path| {
+            let path = path.as_ref().unwrap();
+            // println!("tfrecord: {}", path.display());
+            // let reader = TfRecordReader::open(&path).expect("fail to open");
+            // reader
+            (0..256)
+                .par_bridge()
+                .for_each_with(Aug::default(), |aug, buf| {
+                    // let example =
+                    //     fastdata::tensorflow::Example::decode(&mut Cursor::new(buf.unwrap()))
+                    //         .unwrap();
 
-        let (record_sender, record_receiver) = bounded(1024);
+                    // let image_bytes = example.get_bytes_list("image")[0];
+                    // let label = example.get_int64_list("label")[0];
 
-        rayon::spawn(move || {
-            record.for_each(|buf| {
-                record_sender.send(buf).unwrap();
-            });
+                    // let img_buf = Mat::from_slice(image_bytes).unwrap();
+                    // let img =
+                    //     opencv::imgcodecs::imdecode(&img_buf, opencv::imgcodecs::IMREAD_COLOR)
+                    //         .unwrap();
+                    let img = Mat::zeros(720, 840, opencv::core::CV_8U)
+                        .unwrap()
+                        .to_mat()
+                        .unwrap();
+
+                    let img = aug.apply(&img);
+                    let label = buf;
+
+                    sender.send((ManagerCtx::from(PyMat(img)), label)).unwrap();
+                });
         });
+        // .for_each_with((Aug::default(), sender), |(aug, sender), buf| {
 
-        record_receiver
-            .into_iter()
-            .par_bridge()
-            .map(|buf| {
-                let example = Example::decode(&mut Cursor::new(buf.unwrap())).unwrap();
-                let image_bytes = example.get_bytes_list("image")[0];
-                let label = example.get_int64_list("label")[0];
-                let img = image::load_from_memory(image_bytes).unwrap();
-                let resized = img.resize(224, 224, image::imageops::FilterType::Triangle);
-                let rgb_img_vec = resized.to_rgb8().to_vec();
-                (rgb_img_vec, label)
-            })
-            .for_each_with(sender, |sender, (img_vec, label)| {
-                sender.send((img_vec, label)).unwrap();
-            });
+        // });
     });
 
-    let it: Box<dyn Iterator<Item = PyObject> + Send> =
-        Box::new(receiver.into_iter().map(|(img_vec, label)| {
+    receiver
+        .map(|(img, label)| {
             Python::with_gil(|py| {
                 let dic = PyDict::new(py);
-                dic.set_item("image", TensorWrapper::from(img_vec).into_py(py))
-                    .unwrap();
+                dic.set_item("image", img.into_py(py)).unwrap();
+                // dic.set_item("image", ManagerCtx::from(PyMat(img)).into_py(py)).unwrap();
                 dic.set_item("label", label).unwrap();
-                dic.into()
+                dic.into_py(py)
             })
-        }));
+        })
+        .data_source()
+}
 
-    MyIterator { iter: it }
+#[pyfunction]
+fn pure_data(n: usize) -> DataSource {
+    (0..n)
+        .map(|x| {
+            Python::with_gil(|py| {
+                let dic = PyDict::new(py);
+                dic.set_item(
+                    "image",
+                    ManagerCtx::from(vec![1.0f32; 3 * 224 * 224]).into_py(py),
+                )
+                .unwrap();
+                dic.into_py(py)
+            })
+        })
+        .data_source()
 }
 
 #[pymodule]
 fn mylib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(add, m)?)?;
-    m.add_function(wrap_pyfunction!(make_record_dataset, m)?)?;
+    m.add_function(wrap_pyfunction!(one_tfrecord, m)?)?;
+    m.add_function(wrap_pyfunction!(pure_data, m)?)?;
     Ok(())
 }
 

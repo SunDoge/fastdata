@@ -3,7 +3,7 @@ pub mod ops;
 pub mod python;
 pub mod readers;
 pub mod tensorflow;
-mod utils;
+pub mod utils;
 pub mod writers;
 
 pub fn add(left: usize, right: usize) -> usize {
