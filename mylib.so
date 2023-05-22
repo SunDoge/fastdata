@@ -1,1 +1,1 @@
-target/debug/libmylib.so
+target/release/libmylib.so

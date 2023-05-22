@@ -10,16 +10,16 @@ const BUFFER_SIZE: usize = 16 * 1024;
 fn main() {
     // let tfrecords = glob::glob("/home/denghuang/datasets/imagenet-tfrec/val/*.tfrecord").unwrap();
     let tfrecords =
-        glob::glob("/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/train/*.tfrecord").unwrap();
+        glob::glob("/mnt/cephfs/home/chenyaofo/datasets/imagenet-tfrec/val/*.tfrecord").unwrap();
     let filenames: Vec<_> = tfrecords.map(|p| p.unwrap()).collect();
 
-    let start_time = Instant::now();
-    let num_blocks = seq_read(&filenames);
-    dbg!(start_time.elapsed(), num_blocks);
-
     // let start_time = Instant::now();
-    // let num_blocks = iouring_read(&filenames);
+    // let num_blocks = seq_read(&filenames);
     // dbg!(start_time.elapsed(), num_blocks);
+
+    let start_time = Instant::now();
+    let num_blocks = iouring_read(&filenames);
+    dbg!(start_time.elapsed(), num_blocks);
 }
 
 fn seq_read(filenames: &[PathBuf]) -> usize {

@@ -13,4 +13,8 @@ impl MyIterator {
     fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
         slf.iter.next()
     }
+
+    // pub fn next_item(&mut self) -> Option<PyObject> {
+    //     self.iter.next()
+    // }
 }
