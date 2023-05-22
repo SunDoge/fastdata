@@ -1,4 +1,4 @@
-use std::{fs::File, io::Read};
+use std::io::Read;
 
 use crate::{error::Result, utils::crc32c::verify_masked_crc};
 
@@ -14,19 +14,6 @@ pub struct TfrecordReader<T> {
 }
 
 impl<T: Read> TfrecordReader<T> {
-    // pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-    //     let file = File::open(path)?;
-    //     let reader = BufReader::new(file);
-
-    //     Ok(Self {
-    //         reader,
-    //         check_integrity: false,
-    //         length_buf: [0; U64_SIZE],
-    //         masked_crc_buf: [0; U32_SIZE],
-    //         data_buf: Vec::with_capacity(1024),
-    //     })
-    // }
-
     pub fn new(reader: T, check_integrity: bool) -> Self {
         Self {
             reader,
