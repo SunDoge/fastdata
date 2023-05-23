@@ -8,6 +8,11 @@ edition = "2021"
 [dependencies]
 bytes = "1.4.0"
 prost = "0.11.9"
+crc32c = "0.6.3"
+slab = "0.4.8"
+thiserror = "1.0.40"
+io-uring = "0.6.0"
+kanal = "0.1.0-pre8"
 
 [dev-dependencies]
 prost-build = "0.11.9"

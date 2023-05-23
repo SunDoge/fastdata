@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::{mem::ManuallyDrop, os::fd::AsRawFd};
 
 use crate::error::{Error, Result};
-use crate::utils::crc32c::verify_masked_crc;
+use crate::crc32c::verify_masked_crc;
 use io_uring::{opcode, types, IoUring};
 use kanal::Sender;
 use slab::Slab;

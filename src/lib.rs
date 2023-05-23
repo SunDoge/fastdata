@@ -2,7 +2,6 @@ pub mod error;
 pub mod ops;
 pub mod python;
 pub mod readers;
-pub mod tensorflow;
 pub mod utils;
 pub mod writers;
 
