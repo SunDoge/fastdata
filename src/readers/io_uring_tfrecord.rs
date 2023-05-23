@@ -98,7 +98,7 @@ where
 {
     pub fn new(source: T, queue_depth: u32, check_integrity: bool) -> Result<Self> {
         let max_reads = queue_depth as usize;
-        Ok(Self {
+        let mut reader = Self {
             source,
             buffers: Slab::with_capacity(max_reads),
             ring: IoUring::new(queue_depth)?,
@@ -107,7 +107,9 @@ where
             pending: Vec::with_capacity(max_reads),
             finished: VecDeque::with_capacity(max_reads),
             check_integrity,
-        })
+        };
+        reader.start()?;
+        Ok(reader)
     }
 
     pub fn start(&mut self) -> Result<()> {
@@ -119,6 +121,7 @@ where
             }
         }
         self.drain_pending()?;
+        self.ring.submit_and_wait(1)?;
         Ok(())
     }
 
@@ -215,23 +218,53 @@ where
 
     /// Must call start first
     pub fn read(&mut self) -> Result<Option<Vec<u8>>> {
-        if self.num_reads == 0 && self.finished.is_empty() {
-            Ok(None)
-        } else {
-            if self.finished.is_empty() {
-                // We have to make sure we have at least one return buffer
-                self.ring.submit_and_wait(1)?;
+        // if self.is_finished() {
+        //     Ok(None)
+        // } else {
+        //     if self.finished.is_empty() {
+        //         self.ring.submit_and_wait(1)?;
+
+        //         while !self.is_finished() {
+        //             // Decrease num_reads, add pending, add finished
+        //             self.check_completion()?;
+
+        //             if !self.pending.is_empty() {
+        //                 self.drain_pending()?;
+        //                 self.ring.submit_and_wait(1)?;
+        //             }
+        //         }
+
+        //         Ok(self.finished.pop_front())
+        //     } else {
+        //         // Decrease num_reads, add pending, add finished
+        //         self.check_completion()?;
+
+        //         if !self.pending.is_empty() {
+        //             self.drain_pending()?;
+        //             self.ring.submit()?;
+        //         }
+
+        //         // We have at least one finished, so return it
+        //         Ok(self.finished.pop_front())
+        //     }
+        // }
+
+        while self.num_reads > 0 {
+            self.check_completion()?;
+            if !self.pending.is_empty() {
+                self.drain_pending()?;
+
+                self.ring.submit()?;
             }
 
-            // Decrease num_reads, add pending, add finished
-            self.check_completion()?;
-
-            // drain pending, increase num_reads
-            self.drain_pending()?;
-
-            // We have at least one finished, so return it
-            Ok(self.finished.pop_front())
+            if self.finished.is_empty() {
+                self.ring.submit_and_wait(1)?;
+            } else {
+                return Ok(self.finished.pop_front());
+            }
         }
+
+        Ok(None)
     }
 
     pub fn add_read_header(&mut self, fd: std::fs::File) {
@@ -264,18 +297,28 @@ where
 
     pub fn drain_pending(&mut self) -> Result<()> {
         assert!(self.pending.len() <= self.max_reads - self.num_reads);
-        if self.pending.is_empty() {
-            Ok(())
-        } else {
-            for read_e in self.pending.drain(..) {
-                unsafe {
-                    self.ring.submission().push(&read_e)?;
-                }
-                self.num_reads += 1;
+        for read_e in self.pending.drain(..) {
+            unsafe {
+                self.ring.submission().push(&read_e)?;
             }
-            self.ring.submit()?;
-            Ok(())
+            self.num_reads += 1;
         }
+        Ok(())
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.num_reads == 0 && self.finished.is_empty()
+    }
+}
+
+impl<T> Iterator for IoUringTfrecordReader<T>
+where
+    T: Iterator<Item = std::fs::File>,
+{
+    type Item = Result<Vec<u8>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.read().transpose()
     }
 }
 
@@ -291,7 +334,7 @@ pub fn io_uring_loop<T>(
     let max_reads = queue_depth as usize;
     let mut buffers = Slab::with_capacity(max_reads);
 
-    let mut waiting = Vec::new();
+    let mut pending = Vec::new();
 
     for _ in 0..max_reads {
         if let Some(fd) = source.next() {
@@ -306,7 +349,7 @@ pub fn io_uring_loop<T>(
             let buf_idx = buffers.insert(buffer);
             let buf_ref = &mut buffers[buf_idx];
             let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
-            waiting.push(read_e);
+            pending.push(read_e);
         } else {
             break;
         }
@@ -314,7 +357,7 @@ pub fn io_uring_loop<T>(
 
     let mut num_reads = 0;
 
-    for read_e in waiting.drain(..) {
+    for read_e in pending.drain(..) {
         unsafe {
             ring.submission().push(&read_e).unwrap();
         }
@@ -348,7 +391,7 @@ pub fn io_uring_loop<T>(
                     let buf_idx = buffers.insert(buffer);
                     let buf_ref = &mut buffers[buf_idx];
                     let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
-                    waiting.push(read_e);
+                    pending.push(read_e);
                 }
             } else {
                 // dbg!(bytes_read);
@@ -372,7 +415,7 @@ pub fn io_uring_loop<T>(
                     buf_ref.offset += (U64_SIZE + U32_SIZE) as u64;
 
                     let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
-                    waiting.push(read_e);
+                    pending.push(read_e);
                 } else {
                     let data_buf = Vec::from(buf_ref.io_vecs[0]);
                     if check_integrity {
@@ -397,15 +440,15 @@ pub fn io_uring_loop<T>(
                     buf_ref.offset += (data_length + U32_SIZE + U64_SIZE + U32_SIZE) as u64;
 
                     let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
-                    waiting.push(read_e);
+                    pending.push(read_e);
                 }
             }
             num_reads -= 1;
         }
 
         // dbg!(num_reads);
-        let n = waiting.len().min(max_reads - num_reads);
-        for read_e in waiting.drain(0..n) {
+        let n = pending.len().min(max_reads - num_reads);
+        for read_e in pending.drain(0..n) {
             unsafe {
                 ring.submission().push(&read_e).unwrap();
             }
