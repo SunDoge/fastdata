@@ -1,59 +1,13 @@
-use std::collections::VecDeque;
-use std::{mem::ManuallyDrop, os::fd::AsRawFd};
+use std::os::fd::AsRawFd;
 
-use crate::error::{Error, Result};
 use crate::crc32c::verify_masked_crc;
+use crate::error::Result;
+use crate::utils::IoVec;
 use io_uring::{opcode, types, IoUring};
-use kanal::Sender;
 use slab::Slab;
 
 const U64_SIZE: usize = std::mem::size_of::<u64>();
 const U32_SIZE: usize = std::mem::size_of::<u32>();
-
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct IoVec {
-    pub iov_base: *mut std::ffi::c_void,
-    pub iov_len: usize,
-}
-
-impl IoVec {
-    pub fn as_slice(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.iov_base as *const _, self.iov_len) }
-    }
-}
-
-impl From<Vec<u8>> for IoVec {
-    fn from(value: Vec<u8>) -> Self {
-        let value = ManuallyDrop::new(value);
-        Self {
-            iov_base: value.as_ptr() as *mut _,
-            iov_len: value.len(),
-        }
-    }
-}
-
-impl<const N: usize> From<[u8; N]> for IoVec {
-    fn from(value: [u8; N]) -> Self {
-        let value = ManuallyDrop::new(value);
-        Self {
-            iov_base: value.as_ptr() as *mut _,
-            iov_len: value.len(),
-        }
-    }
-}
-
-impl From<IoVec> for Vec<u8> {
-    fn from(value: IoVec) -> Self {
-        unsafe { Vec::from_raw_parts(value.iov_base as *mut _, value.iov_len, value.iov_len) }
-    }
-}
-
-// impl From<IoVec> for &[u8] {
-//     fn from(value: IoVec) -> Self {
-//         unsafe { std::slice::from_raw_parts(value.iov_base as *const _, value.iov_len) }
-//     }
-// }
 
 #[derive(Debug)]
 pub struct Buffer {
@@ -79,261 +33,26 @@ impl Buffer {
     pub fn is_read_header(&self) -> bool {
         self.io_vecs.len() == 2
     }
-}
 
-pub struct IoUringTfrecordReader<T> {
-    pub source: T,
-    pub buffers: Slab<Buffer>,
-    pub ring: IoUring,
-    pub num_reads: usize,
-    pub max_reads: usize,
-    pub pending: Vec<io_uring::squeue::Entry>,
-    pub finished: VecDeque<Vec<u8>>,
-    pub check_integrity: bool,
-}
-
-impl<T> IoUringTfrecordReader<T>
-where
-    T: Iterator<Item = std::fs::File>,
-{
-    pub fn new(source: T, queue_depth: u32, check_integrity: bool) -> Result<Self> {
-        let max_reads = queue_depth as usize;
-        let mut reader = Self {
-            source,
-            buffers: Slab::with_capacity(max_reads),
-            ring: IoUring::new(queue_depth)?,
-            num_reads: 0,
-            max_reads,
-            pending: Vec::with_capacity(max_reads),
-            finished: VecDeque::with_capacity(max_reads),
-            check_integrity,
-        };
-        reader.start()?;
-        Ok(reader)
-    }
-
-    pub fn start(&mut self) -> Result<()> {
-        for _ in 0..self.max_reads {
-            if let Some(fd) = self.source.next() {
-                self.add_read_header(fd);
-            } else {
-                break;
-            }
-        }
-        self.drain_pending()?;
-        self.ring.submit_and_wait(1)?;
-        Ok(())
-    }
-
-    /// If tasks completed, drain them and submit new ones
-    pub fn check_completion(&mut self) -> Result<()> {
-        for cqe in self.ring.completion() {
-            if cqe.result() < 0 {
-                return Err(Error::from_raw_os_io_error(-cqe.result()));
-            }
-
-            let buf_idx = cqe.user_data() as usize;
-            let bytes_read = cqe.result();
-
-            // If finished
-            if bytes_read == 0 {
-                let buffer = self.buffers.remove(buf_idx);
-                println!("finished: {:?}", buffer);
-
-                // Try to add next file
-                if let Some(fd) = self.source.next() {
-                    let buffer = Buffer {
-                        fd,
-                        io_vecs: vec![
-                            IoVec::from(vec![0; U64_SIZE]),
-                            IoVec::from(vec![0; U32_SIZE]),
-                        ],
-                        offset: 0,
-                    };
-
-                    // Reload a new Buffer
-                    let buf_idx = self.buffers.insert(buffer);
-                    let buf_ref = &mut self.buffers[buf_idx];
-                    let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
-                    self.pending.push(read_e);
-                }
-            } else {
-                let buf_ref = &mut self.buffers[buf_idx];
-                if buf_ref.is_read_header() {
-                    let length_buf = buf_ref.io_vecs[0].as_slice().try_into().unwrap();
-                    let length = u64::from_le_bytes(length_buf);
-                    if self.check_integrity {
-                        let masked_crc_buf = buf_ref.io_vecs[1].as_slice().try_into().unwrap();
-                        let masked_crc = u32::from_le_bytes(masked_crc_buf);
-                        verify_masked_crc(&length_buf, masked_crc)?;
-                    }
-                    buf_ref.io_vecs = vec![
-                        IoVec::from(vec![0; length as usize]),
-                        IoVec::from(vec![0; U32_SIZE]),
-                        IoVec::from(vec![0; U64_SIZE]),
-                        IoVec::from(vec![0; U32_SIZE]),
-                    ];
-
-                    // Move to data start
-                    buf_ref.offset += (U64_SIZE + U32_SIZE) as u64;
-                    let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
-                    self.pending.push(read_e);
-                } else {
-                    let data_buf = Vec::from(buf_ref.io_vecs[0]);
-                    if self.check_integrity {
-                        let masked_crc_buf = buf_ref.io_vecs[1].as_slice().try_into().unwrap();
-                        let masked_crc = u32::from_le_bytes(masked_crc_buf);
-                        assert!(verify_masked_crc(&data_buf, masked_crc).is_ok());
-                    }
-
-                    // Save finished data
-                    let data_length = data_buf.len();
-                    self.finished.push_back(data_buf);
-
-                    // Get next record length
-                    let length_buf = buf_ref.io_vecs[2].as_slice().try_into().unwrap();
-                    let length = u64::from_le_bytes(length_buf);
-
-                    if self.check_integrity {
-                        let masked_crc_buf = buf_ref.io_vecs[3].as_slice().try_into().unwrap();
-                        let masked_crc = u32::from_le_bytes(masked_crc_buf);
-                        assert!(verify_masked_crc(&length_buf, masked_crc).is_ok());
-                    }
-
-                    // Update data buffer length is enough
-                    buf_ref.io_vecs[0] = IoVec::from(vec![0; length as usize]);
-                    buf_ref.offset += (data_length + U32_SIZE + U64_SIZE + U32_SIZE) as u64;
-
-                    let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
-                    self.pending.push(read_e);
-                }
-            }
-
-            // For every cqe, decrease num_reads
-            self.num_reads -= 1;
-        }
-
-        Ok(())
-    }
-
-    /// Must call start first
-    pub fn read(&mut self) -> Result<Option<Vec<u8>>> {
-        // if self.is_finished() {
-        //     Ok(None)
-        // } else {
-        //     if self.finished.is_empty() {
-        //         self.ring.submit_and_wait(1)?;
-
-        //         while !self.is_finished() {
-        //             // Decrease num_reads, add pending, add finished
-        //             self.check_completion()?;
-
-        //             if !self.pending.is_empty() {
-        //                 self.drain_pending()?;
-        //                 self.ring.submit_and_wait(1)?;
-        //             }
-        //         }
-
-        //         Ok(self.finished.pop_front())
-        //     } else {
-        //         // Decrease num_reads, add pending, add finished
-        //         self.check_completion()?;
-
-        //         if !self.pending.is_empty() {
-        //             self.drain_pending()?;
-        //             self.ring.submit()?;
-        //         }
-
-        //         // We have at least one finished, so return it
-        //         Ok(self.finished.pop_front())
-        //     }
-        // }
-
-        while self.num_reads > 0 {
-            self.check_completion()?;
-            if !self.pending.is_empty() {
-                self.drain_pending()?;
-
-                self.ring.submit()?;
-            }
-
-            if self.finished.is_empty() {
-                self.ring.submit_and_wait(1)?;
-            } else {
-                return Ok(self.finished.pop_front());
-            }
-        }
-
-        Ok(None)
-    }
-
-    pub fn add_read_header(&mut self, fd: std::fs::File) {
-        let buffer = Buffer {
-            fd,
-            io_vecs: vec![
-                IoVec::from(vec![0; U64_SIZE]),
-                IoVec::from(vec![0; U32_SIZE]),
-            ],
-            offset: 0,
-        };
-        let buf_idx = self.buffers.insert(buffer);
-        let buf_ref = &mut self.buffers[buf_idx];
-        let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
-        self.pending.push(read_e);
-    }
-
-    pub fn read_data(&mut self, buf_idx: usize, length: usize) {
-        let buf_ref = &mut self.buffers[buf_idx];
-        buf_ref.io_vecs = vec![
-            IoVec::from(vec![0; length]),
-            IoVec::from(vec![0; U32_SIZE]),
-            IoVec::from(vec![0; U64_SIZE]),
-            IoVec::from(vec![0; U32_SIZE]),
-        ];
-        buf_ref.offset;
-        let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
-        self.pending.push(read_e);
-    }
-
-    pub fn drain_pending(&mut self) -> Result<()> {
-        assert!(self.pending.len() <= self.max_reads - self.num_reads);
-        for read_e in self.pending.drain(..) {
-            unsafe {
-                self.ring.submission().push(&read_e)?;
-            }
-            self.num_reads += 1;
-        }
-        Ok(())
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.num_reads == 0 && self.finished.is_empty()
+    pub fn build_readv_entry(&self, user_data: u64) -> io_uring::squeue::Entry {
+        self.get_readv().build().user_data(user_data)
     }
 }
 
-impl<T> Iterator for IoUringTfrecordReader<T>
-where
-    T: Iterator<Item = std::fs::File>,
-{
-    type Item = Result<Vec<u8>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.read().transpose()
-    }
-}
-
-pub fn io_uring_loop<T>(
+/// This function work without index
+pub fn io_uring_loop<T, F>(
     source: &mut T,
     queue_depth: u32,
-    sender: Sender<Vec<u8>>,
+    max_reads: usize,
     check_integrity: bool,
-) where
+    cb: F,
+) -> Result<()>
+where
     T: Iterator<Item = std::fs::File>,
+    F: Fn(Vec<u8>),
 {
-    let mut ring = IoUring::new(queue_depth).unwrap();
-    let max_reads = queue_depth as usize;
+    let mut ring = IoUring::new(queue_depth)?;
     let mut buffers = Slab::with_capacity(max_reads);
-
     let mut pending = Vec::new();
 
     for _ in 0..max_reads {
@@ -341,14 +60,14 @@ pub fn io_uring_loop<T>(
             let buffer = Buffer {
                 fd,
                 io_vecs: vec![
-                    IoVec::from(vec![0; U64_SIZE]),
-                    IoVec::from(vec![0; U32_SIZE]),
+                    IoVec::from(vec![0; U64_SIZE]), // length
+                    IoVec::from(vec![0; U32_SIZE]), // crc_of_length
                 ],
                 offset: 0,
             };
             let buf_idx = buffers.insert(buffer);
             let buf_ref = &mut buffers[buf_idx];
-            let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
+            let read_e = buf_ref.build_readv_entry(buf_idx as _);
             pending.push(read_e);
         } else {
             break;
@@ -359,14 +78,12 @@ pub fn io_uring_loop<T>(
 
     for read_e in pending.drain(..) {
         unsafe {
-            ring.submission().push(&read_e).unwrap();
+            ring.submission().push(&read_e)?;
         }
         num_reads += 1;
     }
 
-    ring.submit_and_wait(1).unwrap();
-
-    // let mut length_buf = [0u8; U64_SIZE];
+    ring.submit_and_wait(1)?;
 
     loop {
         for cqe in ring.completion() {
@@ -376,8 +93,7 @@ pub fn io_uring_loop<T>(
             let buf_idx = cqe.user_data() as usize;
             let bytes_read = cqe.result();
             if bytes_read == 0 {
-                let buffer = buffers.remove(buf_idx);
-                println!("finished: {:?}", buffer);
+                let _buffer = buffers.remove(buf_idx);
 
                 if let Some(fd) = source.next() {
                     let buffer = Buffer {
@@ -390,31 +106,37 @@ pub fn io_uring_loop<T>(
                     };
                     let buf_idx = buffers.insert(buffer);
                     let buf_ref = &mut buffers[buf_idx];
-                    let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
+                    let read_e = buf_ref.build_readv_entry(buf_idx as _);
                     pending.push(read_e);
                 }
             } else {
                 // dbg!(bytes_read);
                 let buf_ref = &mut buffers[buf_idx];
                 if buf_ref.is_read_header() {
-                    let length_buf = buf_ref.io_vecs[0].as_slice().try_into().unwrap();
+                    let length_buf = buf_ref.io_vecs[0]
+                        .as_slice()
+                        .try_into()
+                        .expect("fail to convert to array");
                     let length = u64::from_le_bytes(length_buf);
 
                     if check_integrity {
-                        let masked_crc_buf = buf_ref.io_vecs[1].as_slice().try_into().unwrap();
+                        let masked_crc_buf = buf_ref.io_vecs[1]
+                            .as_slice()
+                            .try_into()
+                            .expect("fail to convert to array");
                         let masked_crc = u32::from_le_bytes(masked_crc_buf);
                         assert!(verify_masked_crc(&length_buf, masked_crc).is_ok());
                     }
 
                     buf_ref.io_vecs = vec![
-                        IoVec::from(vec![0; length as usize]),
-                        IoVec::from(vec![0; U32_SIZE]),
-                        IoVec::from(vec![0; U64_SIZE]),
-                        IoVec::from(vec![0; U32_SIZE]),
+                        IoVec::from(vec![0; length as usize]), // data
+                        IoVec::from(vec![0; U32_SIZE]),        // crc of data
+                        IoVec::from(vec![0; U64_SIZE]),        // length
+                        IoVec::from(vec![0; U32_SIZE]),        // crc of length
                     ];
                     buf_ref.offset += (U64_SIZE + U32_SIZE) as u64;
 
-                    let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
+                    let read_e = buf_ref.build_readv_entry(buf_idx as _);
                     pending.push(read_e);
                 } else {
                     let data_buf = Vec::from(buf_ref.io_vecs[0]);
@@ -425,7 +147,9 @@ pub fn io_uring_loop<T>(
                     }
 
                     let data_length = data_buf.len();
-                    sender.send(data_buf).unwrap();
+
+                    // Pass the buffer out
+                    cb(data_buf);
 
                     let length_buf = buf_ref.io_vecs[2].as_slice().try_into().unwrap();
                     let length = u64::from_le_bytes(length_buf);
@@ -436,26 +160,23 @@ pub fn io_uring_loop<T>(
                         assert!(verify_masked_crc(&length_buf, masked_crc).is_ok());
                     }
 
+                    // Reset data buffer
                     buf_ref.io_vecs[0] = IoVec::from(vec![0; length as usize]);
                     buf_ref.offset += (data_length + U32_SIZE + U64_SIZE + U32_SIZE) as u64;
 
-                    let read_e = buf_ref.get_readv().build().user_data(buf_idx as _);
+                    let read_e = buf_ref.build_readv_entry(buf_idx as _);
                     pending.push(read_e);
                 }
             }
             num_reads -= 1;
         }
 
-        // dbg!(num_reads);
-        let n = pending.len().min(max_reads - num_reads);
-        for read_e in pending.drain(0..n) {
+        for read_e in pending.drain(..) {
             unsafe {
-                ring.submission().push(&read_e).unwrap();
+                ring.submission().push(&read_e)?;
             }
             num_reads += 1;
         }
-
-        // dbg!(num_reads == max_reads);
 
         if num_reads == 0 {
             break;
@@ -463,4 +184,6 @@ pub fn io_uring_loop<T>(
 
         ring.submit_and_wait(1).unwrap();
     }
+
+    Ok(())
 }
