@@ -20,12 +20,8 @@ rayon = "1.7.0"
 thiserror = "1.0.40"
 zune-jpeg = "0.3.17"
 zune-png = "0.2.1"
-dlpark = "0.2.0"
+dlpark = "0.2.1"
 kanal = { version = "0.1.0-pre8" }
-
-
-[build-dependencies]
-prost-build = "0.11.9"
 
 
 [features]

@@ -5,8 +5,7 @@ const MASK_DELTA: u32 = 0xa282ead8;
 #[inline]
 pub fn get_masked_crc(buf: &[u8]) -> u32 {
     let crc = crc32c::crc32c(buf);
-    let masked_crc = ((crc >> 15) | (crc << 17)).wrapping_add(MASK_DELTA);
-    masked_crc
+    ((crc >> 15) | (crc << 17)).wrapping_add(MASK_DELTA)
 }
 
 #[inline]

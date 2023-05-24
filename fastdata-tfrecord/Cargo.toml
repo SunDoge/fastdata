@@ -16,4 +16,6 @@ kanal = "0.1.0-pre8"
 
 [dev-dependencies]
 clap = { version = "4.3.0", features = ["derive"] }
+glob = "0.3.1"
+kanal = "0.1.0-pre8"
 prost-build = "0.11.9"

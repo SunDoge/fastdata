@@ -25,7 +25,7 @@ impl<T: Write> TfrecordWriter<T> {
 
         self.writer.write_all(&length_buf)?;
         self.writer.write_all(&masked_crc_of_length_buf)?;
-        self.writer.write_all(&buf)?;
+        self.writer.write_all(buf)?;
         self.writer.write_all(&masked_crc_of_data_buf)?;
 
         Ok(())

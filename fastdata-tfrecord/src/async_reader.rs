@@ -41,9 +41,8 @@ impl Buffer {
 
 /// This function work without index
 pub fn io_uring_loop<T, F>(
-    source: &mut T,
+    mut source: T,
     queue_depth: u32,
-    max_reads: usize,
     check_integrity: bool,
     cb: F,
 ) -> Result<()>
@@ -52,6 +51,8 @@ where
     F: Fn(Vec<u8>),
 {
     let mut ring = IoUring::new(queue_depth)?;
+
+    let max_reads = queue_depth as usize;
     let mut buffers = Slab::with_capacity(max_reads);
     let mut pending = Vec::new();
 
