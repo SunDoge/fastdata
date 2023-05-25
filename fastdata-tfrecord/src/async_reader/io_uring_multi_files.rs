@@ -54,7 +54,7 @@ where
 
     let max_reads = queue_depth as usize;
     let mut buffers = Slab::with_capacity(max_reads);
-    let mut pending = Vec::new();
+    let mut pending = Vec::with_capacity(max_reads);
 
     for _ in 0..max_reads {
         if let Some(fd) = source.next() {
@@ -84,9 +84,8 @@ where
         num_reads += 1;
     }
 
-    ring.submit_and_wait(1)?;
-
     loop {
+        ring.submit_and_wait(1)?;
         for cqe in ring.completion() {
             // TODO: return Err
             assert!(cqe.result() >= 0);
@@ -106,7 +105,7 @@ where
                         offset: 0,
                     };
                     let buf_idx = buffers.insert(buffer);
-                    let buf_ref = &mut buffers[buf_idx];
+                    let buf_ref = &buffers[buf_idx];
                     let read_e = buf_ref.build_readv_entry(buf_idx as _);
                     pending.push(read_e);
                 }
@@ -172,6 +171,7 @@ where
             num_reads -= 1;
         }
 
+        // Will submit at the beginning
         for read_e in pending.drain(..) {
             unsafe {
                 ring.submission().push(&read_e)?;
@@ -182,8 +182,6 @@ where
         if num_reads == 0 {
             break;
         }
-
-        ring.submit_and_wait(1).unwrap();
     }
 
     Ok(())

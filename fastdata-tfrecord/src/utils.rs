@@ -36,6 +36,7 @@ impl<const N: usize> From<[u8; N]> for IoVec {
 }
 
 impl From<IoVec> for Vec<u8> {
+    // TODO: this is really unsafe, don't use it
     fn from(value: IoVec) -> Self {
         unsafe { Vec::from_raw_parts(value.iov_base as *mut _, value.iov_len, value.iov_len) }
     }

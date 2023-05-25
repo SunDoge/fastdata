@@ -1,10 +1,17 @@
 use std::{
+    io::BufReader,
     path::PathBuf,
     time::{Duration, Instant},
 };
 
 use clap::{Parser, ValueEnum};
-use fastdata_tfrecord::async_reader::{self, io_uring_single_file::AsyncDepthOneTfrecordReader};
+use fastdata_tfrecord::{
+    async_reader::{
+        self,
+        io_uring_single_file::{AsyncBufReader, AsyncDepthOneTfrecordReader},
+    },
+    sync_reader::TfrecordReader,
+};
 use glob::glob;
 use kanal::bounded;
 use rayon::prelude::*;
@@ -27,6 +34,8 @@ struct Cli {
 enum Reader {
     IoUringMultiFiles,
     IoUringSingleFileDepthOne,
+    Sync,
+    SyncOverAsync,
 }
 
 fn main() {
@@ -45,6 +54,8 @@ fn main() {
     let (num_records, elapsed) = match cli.reader {
         Reader::IoUringMultiFiles => bench_io_uring_multi_files(&cli, tfrecords),
         Reader::IoUringSingleFileDepthOne => bench_io_uring_single_file_depth_one(&cli, tfrecords),
+        Reader::Sync => bench_sync(&cli, tfrecords),
+        Reader::SyncOverAsync => bench_sync_over_async(&cli, tfrecords),
     };
 
     let secs = elapsed.as_secs_f64();
@@ -57,7 +68,7 @@ fn main() {
 }
 
 fn bench_io_uring_multi_files(cli: &Cli, tfrecords: Vec<PathBuf>) -> (usize, Duration) {
-    let mut tfrecord_files = tfrecords
+    let tfrecord_files = tfrecords
         .into_iter()
         .map(|p| std::fs::File::open(p).unwrap());
 
@@ -81,10 +92,6 @@ fn bench_io_uring_multi_files(cli: &Cli, tfrecords: Vec<PathBuf>) -> (usize, Dur
 }
 
 fn bench_io_uring_single_file_depth_one(cli: &Cli, tfrecords: Vec<PathBuf>) -> (usize, Duration) {
-    // let mut tfrecord_files = tfrecords
-    //     .into_iter()
-    //     .map(|p| std::fs::File::open(p).unwrap());
-
     rayon::ThreadPoolBuilder::new()
         .num_threads(cli.queue_depth as usize)
         .build_global()
@@ -96,6 +103,64 @@ fn bench_io_uring_single_file_depth_one(cli: &Cli, tfrecords: Vec<PathBuf>) -> (
         .flat_map_iter(|path| {
             let file = std::fs::File::open(path).unwrap();
             AsyncDepthOneTfrecordReader::new(file, cli.check_integrity).unwrap()
+        })
+        .map(|buf| buf.unwrap())
+        .count();
+
+    (num_records, start_time.elapsed())
+}
+
+fn bench_sync(cli: &Cli, tfrecords: Vec<PathBuf>) -> (usize, Duration) {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(cli.queue_depth as usize)
+        .build_global()
+        .unwrap();
+
+    let start_time = Instant::now();
+    let num_records = tfrecords
+        .par_iter()
+        .flat_map_iter(|path| {
+            let file = std::fs::File::open(path).unwrap();
+            let buf_reader = BufReader::new(file);
+            TfrecordReader::new(buf_reader, cli.check_integrity)
+        })
+        .map(|buf| buf.unwrap())
+        .count();
+
+    (num_records, start_time.elapsed())
+}
+
+fn bench_sync_over_async(cli: &Cli, tfrecords: Vec<PathBuf>) -> (usize, Duration) {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(cli.queue_depth as usize / 4)
+        .build_global()
+        .unwrap();
+
+    // let queue_depth = cli.queue_depth;
+    let queue_depth = 4;
+    let buf_size = 1024 * 1024;
+    let start_time = Instant::now();
+    let num_records = tfrecords
+        .par_iter()
+        .flat_map_iter(|path| {
+            // dbg!(path);
+            let file = std::fs::File::open(path).unwrap();
+            let (sender, reciver) = bounded(1024);
+            std::thread::spawn(move || {
+                async_reader::io_uring_single_file::io_uring_loop(
+                    file,
+                    queue_depth,
+                    buf_size,
+                    |buf| {
+                        // dbg!(buf.data.len());
+                        sender.send(buf).unwrap();
+                    },
+                )
+                .unwrap();
+            });
+            // reciver
+            let buf_reader = AsyncBufReader::new(reciver);
+            TfrecordReader::new(buf_reader, cli.check_integrity)
         })
         .map(|buf| buf.unwrap())
         .count();
