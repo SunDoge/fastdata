@@ -7,6 +7,8 @@ pub struct IoVec {
     pub iov_len: usize,
 }
 
+unsafe impl Send for IoVec {}
+
 impl IoVec {
     pub fn as_slice(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.iov_base as *const _, self.iov_len) }
