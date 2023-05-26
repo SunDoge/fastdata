@@ -1,13 +1,11 @@
 use std::os::fd::AsRawFd;
 
-use crate::crc32c::verify_masked_crc;
+use crate::constants::U32_SIZE;
 use crate::error::Result;
 use crate::utils::IoVec;
+use crate::{constants::U64_SIZE, crc32c::verify_masked_crc};
 use io_uring::{opcode, types, IoUring};
 use slab::Slab;
-
-const U64_SIZE: usize = std::mem::size_of::<u64>();
-const U32_SIZE: usize = std::mem::size_of::<u32>();
 
 #[derive(Debug)]
 pub struct Buffer {

@@ -1,9 +1,10 @@
 use std::io::Read;
 
-use crate::{crc32c::verify_masked_crc, error::Result};
-
-const U64_SIZE: usize = std::mem::size_of::<u64>();
-const U32_SIZE: usize = std::mem::size_of::<u32>();
+use crate::{
+    constants::{U32_SIZE, U64_SIZE},
+    crc32c::verify_masked_crc,
+    error::Result,
+};
 
 pub struct TfrecordReader<T> {
     reader: T,

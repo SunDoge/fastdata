@@ -1,4 +1,5 @@
 pub mod async_reader;
+pub mod constants;
 pub mod crc32c;
 pub mod error;
 pub mod indexing;
