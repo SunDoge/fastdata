@@ -55,6 +55,7 @@ fn make_index_files(args: &MakeArgs) {
             .par_bridge()
             .for_each(|path| {
                 let path = path.unwrap();
+                dbg!(&path);
                 create_index(&path);
             });
     } else if args.path.is_file() {
@@ -64,7 +65,8 @@ fn make_index_files(args: &MakeArgs) {
 
 fn create_index<P: AsRef<Path>>(path: P) {
     let in_file = File::open(&path).unwrap();
-    let index_path = path.as_ref().with_extension("idx");
+    // let index_path = format!("{}.idx", path.as_ref().to_str().unwrap());
+    let index_path = path.as_ref().to_owned().with_extension("tfrecord.idx");
     let out_file = File::create(&index_path).unwrap();
 
     let buf_reader = BufReader::new(in_file);
