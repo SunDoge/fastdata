@@ -1,9 +1,16 @@
 use std::{collections::HashMap, fs::File, io::Read, path::PathBuf};
 
 use clap::Parser;
-use fastdata_tfrecord::sync_writer::TfrecordWriter;
+use fastdata_tfrecord::{
+    sync_writer::TfrecordWriter,
+    tensorflow::{Example, Feature},
+};
 use kanal::bounded;
-use rayon::{prelude::{ParallelBridge, ParallelIterator, IntoParallelRefIterator, IndexedParallelIterator}, slice::ParallelSlice};
+use prost::Message;
+use rayon::{
+    prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelBridge, ParallelIterator},
+    slice::ParallelSlice,
+};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -54,6 +61,8 @@ fn main() {
 
     let pattern = cli.in_dir.join("*/*");
 
+    std::fs::create_dir_all(&cli.out_dir).unwrap();
+
     let samples: Vec<_> = glob::glob(pattern.to_str().unwrap())
         .unwrap()
         .par_bridge()
@@ -74,8 +83,28 @@ fn main() {
 
     dbg!(samples.len());
 
-    samples.par_chunks(500).enumerate().map(|(index, chunk)| {
-        // let mut writer = TfrecordWriter::create(path)
-    });
+    let num_chunks = samples.chunks(500).len();
 
+    samples
+        .par_chunks(500)
+        .enumerate()
+        .for_each(|(index, chunk)| {
+            let path = cli
+                .out_dir
+                .join(format!("{:06}-of-{:06}.tfrecord", index + 1, num_chunks));
+            let mut writer = TfrecordWriter::create(&path).unwrap();
+            for (img_path, label) in chunk {
+                let mut img_buf = Vec::new();
+                File::open(&img_path)
+                    .unwrap()
+                    .read_to_end(&mut img_buf)
+                    .unwrap();
+
+                let image_feat = Feature::from(img_buf);
+                let label_feat = Feature::from(vec![*label as i64]);
+                let example = Example::from([("image", image_feat), ("label", label_feat)]);
+                let example_buf = example.encode_to_vec();
+                writer.write(&example_buf).unwrap();
+            }
+        });
 }

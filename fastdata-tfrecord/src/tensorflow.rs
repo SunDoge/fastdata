@@ -1,3 +1,5 @@
+use prost::Message;
+
 include!("proto/tensorflow.rs");
 
 impl Example {
