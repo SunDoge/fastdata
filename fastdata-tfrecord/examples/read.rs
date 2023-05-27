@@ -8,6 +8,7 @@ use clap::{Parser, ValueEnum};
 use fastdata_tfrecord::{
     async_reader::{
         self,
+        io_uring_random_reader::AsyncRandomReader,
         io_uring_single_file::{AsyncBufReader, AsyncDepthOneTfrecordReader},
     },
     sync_reader::TfrecordReader,
@@ -26,6 +27,9 @@ struct Cli {
     #[arg(long, short)]
     check_integrity: bool,
 
+    #[arg(long, short = 'j', default_value = "4")]
+    num_threads: usize,
+
     #[arg(value_enum)]
     reader: Reader,
 }
@@ -36,6 +40,7 @@ enum Reader {
     IoUringSingleFileDepthOne,
     Sync,
     SyncOverAsync,
+    IoUringIndexed,
 }
 
 fn main() {
@@ -56,6 +61,7 @@ fn main() {
         Reader::IoUringSingleFileDepthOne => bench_io_uring_single_file_depth_one(&cli, tfrecords),
         Reader::Sync => bench_sync(&cli, tfrecords),
         Reader::SyncOverAsync => bench_sync_over_async(&cli, tfrecords),
+        Reader::IoUringIndexed => bench_io_uring_indexed(&cli, tfrecords),
     };
 
     let secs = elapsed.as_secs_f64();
@@ -164,6 +170,36 @@ fn bench_sync_over_async(cli: &Cli, tfrecords: Vec<PathBuf>) -> (usize, Duration
         })
         .map(|buf| buf.unwrap())
         .count();
+
+    (num_records, start_time.elapsed())
+}
+
+fn bench_io_uring_indexed(cli: &Cli, tfrecords: Vec<PathBuf>) -> (usize, Duration) {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(cli.num_threads)
+        .build_global()
+        .unwrap();
+
+    let (sender, receiver) = bounded(1024 * 1024);
+
+    let queue_depth = cli.queue_depth;
+    let check_integrity = cli.check_integrity;
+
+    let start_time = Instant::now();
+    rayon::spawn(move || {
+        tfrecords.par_iter().for_each_with(sender, |sender, path| {
+            async_reader::io_uring_random_reader::io_uring_loop(
+                path,
+                None,
+                queue_depth,
+                check_integrity,
+                |buf| sender.send(buf).unwrap(),
+            )
+            .unwrap();
+        });
+    });
+
+    let num_records = receiver.count();
 
     (num_records, start_time.elapsed())
 }
