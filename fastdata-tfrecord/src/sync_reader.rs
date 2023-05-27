@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Seek};
 
 use crate::{
     constants::{U32_SIZE, U64_SIZE},
@@ -72,6 +72,31 @@ impl<T: Read> TfrecordReader<T> {
     }
 }
 
+impl<T: Read + Seek> TfrecordReader<T> {
+    // pub fn seek(&mut self, pos: u64) -> Result<()> {
+    //     self.reader.seek(std::io::SeekFrom::Start(pos))?;
+    //     Ok(())
+    // }
+
+    pub fn position(&mut self) -> Result<u64> {
+        self.reader.stream_position().map_err(|err| err.into())
+    }
+
+    pub fn read_index(&mut self) -> Result<Option<(u64, u64)>> {
+        let start_position = self.position()?;
+        if let Some(_) = self.read()? {
+            let end_position = self.position()?;
+            Ok(Some((start_position, end_position - start_position)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn indices(self) -> Indices<T> {
+        Indices { reader: self }
+    }
+}
+
 impl<T: Read> From<T> for TfrecordReader<T> {
     fn from(reader: T) -> Self {
         Self::new(reader, false)
@@ -83,5 +108,17 @@ impl<T: Read> Iterator for TfrecordReader<T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.read().transpose()
+    }
+}
+
+pub struct Indices<T> {
+    reader: TfrecordReader<T>,
+}
+
+impl<T: Read + Seek> Iterator for Indices<T> {
+    type Item = Result<(u64, u64)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.reader.read_index().transpose()
     }
 }
