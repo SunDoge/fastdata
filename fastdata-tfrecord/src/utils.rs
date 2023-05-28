@@ -45,13 +45,22 @@ impl From<IoVec> for Vec<u8> {
 impl From<IoVec> for Box<[u8]> {
     fn from(value: IoVec) -> Self {
         unsafe {
-            // let slice = std::slice::from_raw_parts(value.iov_base as *const u8, value.iov_len);
-            // // Box::from_raw(slice.as_ptr() as *const [u8] as *mut [u8])
-            let v = Vec::from_raw_parts(value.iov_base as *mut _, value.iov_len, value.iov_len);
-            v.into_boxed_slice()
+            let v = std::slice::from_raw_parts(value.iov_base as *const u8, value.iov_len);
+            Box::from_raw(v as *const [u8] as *mut [u8])
         }
     }
 }
+
+// impl From<IoVec> for Box<[u8]> {
+//     fn from(value: IoVec) -> Self {
+//         unsafe {
+//             // let slice = std::slice::from_raw_parts(value.iov_base as *const u8, value.iov_len);
+//             // // Box::from_raw(slice.as_ptr() as *const [u8] as *mut [u8])
+//             let v = Vec::from_raw_parts(value.iov_base as *mut _, value.iov_len, value.iov_len);
+//             v.into_boxed_slice()
+//         }
+//     }
+// }
 
 // impl From<IoVec> for &[u8] {
 //     fn from(value: IoVec) -> Self {
