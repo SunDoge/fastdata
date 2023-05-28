@@ -31,7 +31,7 @@ impl Example {
     }
 
     pub fn from_bytes(buf: &[u8]) -> Result<Self> {
-        Self::decode(buf).map_err(Into::into)
+        Self::decode(std::io::Cursor::new(buf)).map_err(Into::into)
     }
 }
 
