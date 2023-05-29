@@ -1,4 +1,8 @@
-use std::io::{Read, Seek};
+use std::{
+    fs::File,
+    io::{BufReader, Read, Seek},
+    path::Path,
+};
 
 use crate::{
     constants::{U32_SIZE, U64_SIZE},
@@ -69,6 +73,13 @@ impl<T: Read> TfrecordReader<T> {
 
     pub fn set_check_integrity(&mut self, check_integrity: bool) {
         self.check_integrity = check_integrity;
+    }
+}
+
+impl TfrecordReader<BufReader<File>> {
+    pub fn open<P: AsRef<Path>>(path: P, check_integrity: bool) -> Result<Self> {
+        let file = File::open(path)?;
+        Ok(Self::new(BufReader::new(file), check_integrity))
     }
 }
 

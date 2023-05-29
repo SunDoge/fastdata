@@ -5,7 +5,7 @@ from torch.utils.dlpack import from_dlpack
 
 print(mylib.add(1, 2))
 
-ds = mylib.one_tfrecord("/mnt/ssd/chenyf/val/*.tfrecord", 32)
+ds = mylib.one_tfrecord("/mnt/ssd/chenyf/val/*.tfrecord", 4)
 
 for data in tqdm(ds):
     # print(from_dlpack(data['image']).shape)

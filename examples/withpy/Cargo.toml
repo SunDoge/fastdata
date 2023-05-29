@@ -11,13 +11,13 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.18.3", features = ["extension-module"] }
-dlpark = { git = "https://github.com/SunDoge/dlpark.git" }
-fastdata = { path = "../../", features = ["opencv"]}
+dlpark = "0.2.1"
+fastdata = { path = "../../", features = ["opencv"] }
 rayon = "1.7.0"
 opencv = { version = "0.81.3", default-features = false, features = [
     "imgcodecs",
     "imgproc",
 ] }
 glob = "0.3.1"
-prost = "0.11.9"
 kanal = { version = "0.1.0-pre8" }
+fastdata-tfrecord = { path = "../../fastdata-tfrecord" }
