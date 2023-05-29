@@ -17,6 +17,9 @@ pub enum Error {
     // VipsError(libvips::error::Error),
     #[error("IoUring submission queue push failed: {0}")]
     PushError(#[from] io_uring::squeue::PushError),
+
+    #[error("{0}")]
+    DecodeError(#[from] prost::DecodeError),
 }
 
 impl Error {

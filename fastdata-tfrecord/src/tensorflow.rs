@@ -1,3 +1,4 @@
+use crate::error::Result;
 use prost::Message;
 
 include!("proto/tensorflow.rs");
@@ -13,7 +14,7 @@ impl Example {
         }
     }
 
-    pub fn get_float_list<'a>(&'a self, key: &str) -> Option<&'a [f32]> {
+    pub fn get_float_list(&self, key: &str) -> Option<&[f32]> {
         let feat = self.features.as_ref()?.feature.get(key)?;
         match feat.kind {
             Some(feature::Kind::FloatList(ref list)) => Some(list.value.as_slice()),
@@ -21,7 +22,7 @@ impl Example {
         }
     }
 
-    pub fn get_int64_list<'a>(&'a self, key: &str) -> Option<&'a [i64]> {
+    pub fn get_int64_list(&self, key: &str) -> Option<&[i64]> {
         let feat = self.features.as_ref()?.feature.get(key)?;
         match feat.kind {
             Some(feature::Kind::Int64List(ref list)) => Some(list.value.as_slice()),
@@ -35,6 +36,10 @@ impl Example {
             Some(feature::Kind::BytesList(BytesList { value })) => Some(value),
             _ => None
         }
+    }
+    
+    pub fn from_bytes(buf: &[u8]) -> Result<Self> {
+        Self::decode(std::io::Cursor::new(buf)).map_err(Into::into)
     }
 }
 
