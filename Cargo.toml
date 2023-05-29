@@ -32,7 +32,12 @@ opencv = ["dep:opencv"]
 pyo3 = ["dep:pyo3"]
 
 [workspace]
-members = ["examples/withpy", "fastdata-tfrecord", "fastdata-opencv"]
+members = [
+    "examples/withpy",
+    "fastdata-tfrecord",
+    "fastdata-opencv",
+    "fastdata-datapipe",
+]
 
 [profile.dev]
 rpath = true
