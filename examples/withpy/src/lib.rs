@@ -84,6 +84,62 @@ pub fn one_tfrecord(pattern: &str, num_workers: usize) -> DataSource {
 }
 
 #[pyfunction]
+pub fn async_tfrecord(paths: Vec<String>, num_workers: usize, queue_depth: u32, channel_size: usize) -> DataSource {
+    opencv::core::set_num_threads(0).unwrap();
+    println!(
+        "use optimization {}",
+        opencv::core::use_optimized().unwrap()
+    );
+
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(num_workers)
+        .build_global()
+        .unwrap();
+
+    let (reader_sender, reader_receiver) = bounded(channel_size);
+    let (worker_sender, worker_receiver) = bounded(channel_size);
+
+    std::thread::spawn(move || {
+        let files = paths.iter().map(|p| std::fs::File::open(p).unwrap());
+        fastdata_tfrecord::async_reader::io_uring_multi_files::io_uring_loop(
+            files,
+            queue_depth,
+            false,
+            |buf| reader_sender.send(buf).unwrap(),
+        )
+        .unwrap();
+    });
+
+    std::thread::spawn(move || {
+        let aug = Aug::default();
+        reader_receiver
+            .par_bridge()
+            .for_each_with((worker_sender, aug), |(sender, aug), buf| {
+                let example = Example::from_bytes(&buf).unwrap();
+                let image_bytes = example.get_bytes_list("image").unwrap()[0];
+                let label = example.get_int64_list("label").unwrap()[0];
+
+                let img_buf = Mat::from_slice(image_bytes).unwrap();
+                let img =
+                    opencv::imgcodecs::imdecode(&img_buf, opencv::imgcodecs::IMREAD_COLOR).unwrap();
+                let img = aug.apply(&img);
+                sender.send((ManagerCtx::from(PyMat(img)), label)).unwrap();
+            });
+    });
+
+    worker_receiver
+        .map(|(img, label)| {
+            Python::with_gil(|py| {
+                let dic = PyDict::new(py);
+                dic.set_item("image", img.into_py(py)).unwrap();
+                dic.set_item("label", label).unwrap();
+                dic.into_py(py)
+            })
+        })
+        .data_source()
+}
+
+#[pyfunction]
 fn pure_data(n: usize) -> DataSource {
     (0..n)
         .map(|x| {
@@ -104,6 +160,7 @@ fn pure_data(n: usize) -> DataSource {
 fn mylib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(add, m)?)?;
     m.add_function(wrap_pyfunction!(one_tfrecord, m)?)?;
+    m.add_function(wrap_pyfunction!(async_tfrecord, m)?)?;
     m.add_function(wrap_pyfunction!(pure_data, m)?)?;
     Ok(())
 }

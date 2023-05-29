@@ -7,3 +7,5 @@ perf.data*
 opencv.zip
 imagenette*
 *.tfrecord
+
+*-tfrec
