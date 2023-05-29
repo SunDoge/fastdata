@@ -4,6 +4,7 @@ use crate::{
     constants::{U32_SIZE, U64_SIZE},
     crc32c::verify_masked_crc,
     error::Result,
+    indexing::sync_reader::IndexReader,
     utils::IoVec,
 };
 use io_uring::{opcode, types, IoUring};
@@ -72,14 +73,13 @@ where
         .map(|p| p.as_ref().to_owned())
         .unwrap_or_else(|| path.as_ref().with_extension("tfrecord.idx"));
     let file = File::open(path)?;
-    let index_file = File::open(&index_path)?;
-    let index_reader = MmapIndexReader::new(index_file)?;
+    let index_reader = IndexReader::open(&index_path)?;
     let mut ring = IoUring::new(queue_depth)?;
 
     let mut index_iter = index_reader.into_iter();
 
     let mut num_reads = 0;
-    let mut max_reads = queue_depth as usize;
+    let max_reads = queue_depth as usize;
 
     let mut pending = Vec::new();
     let mut buffers: Slab<_> = Slab::with_capacity(max_reads);
@@ -115,7 +115,7 @@ where
         for cqe in ring.completion() {
             assert!(cqe.result() >= 0);
             let buf_idx = cqe.user_data() as usize;
-            let bytes_read = cqe.result() as usize;
+            let _bytes_read = cqe.result() as usize;
 
             let buf_ref = &mut buffers[buf_idx];
 

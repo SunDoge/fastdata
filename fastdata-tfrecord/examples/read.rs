@@ -118,7 +118,7 @@ fn bench_io_uring_single_file_depth_one(cli: &Cli, tfrecords: Vec<PathBuf>) -> (
 
 fn bench_sync(cli: &Cli, tfrecords: Vec<PathBuf>) -> (usize, Duration) {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(cli.queue_depth as usize)
+        .num_threads(cli.num_threads as usize)
         .build_global()
         .unwrap();
 
@@ -180,14 +180,14 @@ fn bench_io_uring_indexed(cli: &Cli, tfrecords: Vec<PathBuf>) -> (usize, Duratio
         .build_global()
         .unwrap();
 
-    let (sender, receiver) = bounded(1024 * 1024);
+    let (sender, receiver) = bounded(1024 * 1024 * 1024);
 
     let queue_depth = cli.queue_depth;
     let check_integrity = cli.check_integrity;
 
-    let start_time = Instant::now();
-    rayon::spawn(move || {
+    std::thread::spawn(move || {
         tfrecords.par_iter().for_each_with(sender, |sender, path| {
+            dbg!(path);
             async_reader::io_uring_random_reader::io_uring_loop(
                 path,
                 None,
@@ -199,7 +199,7 @@ fn bench_io_uring_indexed(cli: &Cli, tfrecords: Vec<PathBuf>) -> (usize, Duratio
         });
     });
 
+    let start_time = Instant::now();
     let num_records = receiver.count();
-
     (num_records, start_time.elapsed())
 }

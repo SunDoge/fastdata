@@ -28,6 +28,14 @@ impl Example {
             _ => None,
         }
     }
+
+    pub fn take_bytes_list(&mut self, key: &str) -> Option<Vec<Vec<u8>>> {
+        let feat = self.features.as_mut()?.feature.remove(key)?;
+        match feat.kind {
+            Some(feature::Kind::BytesList(BytesList { value })) => Some(value),
+            _ => None
+        }
+    }
 }
 
 impl From<&[f32]> for Feature {
