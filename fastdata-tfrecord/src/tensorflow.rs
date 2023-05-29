@@ -31,13 +31,33 @@ impl Example {
     }
 
     pub fn take_bytes_list(&mut self, key: &str) -> Option<Vec<Vec<u8>>> {
-        let feat = self.features.as_mut()?.feature.remove(key)?;
+        let feat = self.take_feature(key)?;
         match feat.kind {
             Some(feature::Kind::BytesList(BytesList { value })) => Some(value),
-            _ => None
+            _ => None,
         }
     }
-    
+
+    pub fn take_float_list(&mut self, key: &str) -> Option<Vec<f32>> {
+        let feat = self.take_feature(key)?;
+        match feat.kind {
+            Some(feature::Kind::FloatList(FloatList { value })) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn take_int64_list(&mut self, key: &str) -> Option<Vec<i64>> {
+        let feat = self.take_feature(key)?;
+        match feat.kind {
+            Some(feature::Kind::Int64List(Int64List { value })) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn take_feature(&mut self, key: &str) -> Option<Feature> {
+        self.features.as_mut()?.feature.remove(key)
+    }
+
     pub fn from_bytes(buf: &[u8]) -> Result<Self> {
         Self::decode(std::io::Cursor::new(buf)).map_err(Into::into)
     }
